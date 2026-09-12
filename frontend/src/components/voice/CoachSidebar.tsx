@@ -27,6 +27,8 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   const [turns, setTurns] = useState<{ id: string; question?: string; answer?: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Kept apart from `error`: a voice failure is not a failed submission. */
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [thesis, setThesis] = useState("");
   const [prediction, setPrediction] = useState<AnalysisSubmission["prediction"]>("unchanged");
@@ -109,8 +111,8 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
 
   const voiceActive = voiceState !== "idle";
   const run = async (work: () => Promise<void>) => {
-    setBusy(true); setError(null);
-    try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "Request failed. Please try again."); }
+    setBusy(true); setSubmitError(null);
+    try { await work(); } catch (e) { setSubmitError(e instanceof Error ? e.message : "Request failed. Please try again."); }
     finally { setBusy(false); }
   };
   return <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-panel p-5">
@@ -143,7 +145,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
       </div>)}
     </div>
     {error && <div className="mt-3"><ErrorBanner title="Could not continue" message={error} /></div>}
-    <form className="mt-6 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); setConfirming(true); }}>
+    <form className="mt-6 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); setSubmitError(null); setConfirming(true); }}>
       <h3 className="text-lead font-semibold text-ink">Your analysis</h3>
       {heard.length > 0 && <p className="text-tiny text-coach">Filled in from what you said: {heard.map(FIELD_LABEL).join(", ")}. Check it, edit anything, then submit.</p>}
       <label className="block text-base text-ink">Thesis<Textarea value={thesis} onChange={e => setThesis(e.target.value)} required /></label>
@@ -164,6 +166,6 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
         await request("submitAnalysis", { params: { sessionId }, body: { chartSnapshotId: snapshot.id, thesis: thesis.trim(), prediction, hypotheticalAction: action, confidencePercent: Number(confidence), claimedEvidence: evidence.split("\n").map(s => s.trim()).filter(Boolean), ...(invalidation.trim() ? { invalidation: invalidation.trim() } : {}), ...(risk.trim() ? { riskReasoning: risk.trim() } : {}) } });
         router.push(`/replay/${sessionId}/feedback`);
       })}>{busy ? "Submitting…" : "Submit analysis"}</Button>
-    </>}><p className="whitespace-pre-wrap">{thesis}</p><p>{prediction} · {action} · {confidence}% confidence</p>{error && <ErrorBanner title="Submission failed" message={error} />}</Dialog>
+    </>}><p className="whitespace-pre-wrap">{thesis}</p><p>{prediction} · {action} · {confidence}% confidence</p>{submitError && <ErrorBanner title="Submission failed" message={submitError} />}</Dialog>
   </aside>;
 }

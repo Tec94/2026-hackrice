@@ -171,7 +171,16 @@ export class VoiceClient {
     if (message.type === 'session.error' && (!message.turnId || message.turnId === turn.id)) {
       throw new Error(`Voice unavailable (${message.error.code}). Check provider setup and playback validation.`);
     }
-    if (message.type === 'analysis.draft') { this.callbacks.draft(message.draft); return; }
+    if (message.type === 'analysis.draft') {
+      // The server computed this from the learner's own words, so the turn
+      // has an approved reply even though no calculation was spoken.
+      if (this.turn) this.turn.approved = true;
+      this.callbacks.draft(message.draft);
+      return;
+    }
+    // A rating is likewise the server's own work, and a turn that only rated
+    // the analysis would otherwise have nothing to approve its speech.
+    if (message.type === 'evaluation.updated') { if (this.turn) this.turn.approved = true; return; }
     if (!('turnId' in message) || message.turnId !== turn.id) return;
     if ('chartSnapshotId' in message && message.chartSnapshotId !== turn.snapshotId) throw new Error('Voice snapshot mismatch.');
     if (message.type === 'voice.ready') { turn.listening = true; this.callbacks.state('listening'); }
