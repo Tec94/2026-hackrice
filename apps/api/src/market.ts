@@ -219,6 +219,7 @@ export function indicatorSeries(candles: readonly MarketCandle[], spec: Indicato
 }
 
 type Intent = { kind: "metric"; metric: MetricName; period?: number; drawingId?: string }
+  | { kind: "metrics"; metrics: MetricName[] }
   | { kind: "concept"; concept: "ema" | "rsi" | "relative_volume" | "invalidation" }
   | { kind: "refusal"; reason: "advice" | "future" | "news" | "unsupported" };
 
@@ -231,6 +232,9 @@ export function parseQuestionIntent(text: string): Intent {
     .replace(/^how much did (?:it|the price) change$/, "what is the price change")
     .replace(/^how much (?:is |are )?(?:the )?/, "what is the ")
     .replace(/^how (?:high|low|big) (?:is |was )?(?:the )?/, "what is the ")
+    .replace(/ (?:in|on|over|across|within) (?:this|the) (?:area|region|zone|range|window|screen|view|chart|section)$/, " visible")
+    .replace(/ (?:in|on) (?:this|the) (?:visible )?(?:area|range|window|view)$/, " visible")
+    .replace(/ (?:right )?(?:here|on screen|on the screen)$/, " visible")
     .replace(/^what should (?:the )?(.+?) be$/, "what is the $1")
     .replace(/\s+/g, " ").trim();
   if (/\b(news|headline|date|year)\b/.test(question)) return { kind: "refusal", reason: "news" };
@@ -253,6 +257,19 @@ export function parseQuestionIntent(text: string): Intent {
     const period = Number(indicator[2]);
     if (Number.isSafeInteger(period) && period > 0) return { kind: "metric", metric: concepts[indicator[1]!] as "ema" | "rsi" | "relative_volume", period };
   }
+  // Asking for two related values in one breath is normal speech; the reply
+  // already renders a list of facts, so both halves can be answered at once.
+  const pairs: Record<string, MetricName[]> = {
+    "high and low": ["high", "low"], "low and high": ["low", "high"],
+    "high and low visible": ["visible_high", "visible_low"],
+    "low and high visible": ["visible_low", "visible_high"],
+    "visible high and low": ["visible_high", "visible_low"],
+    "visible low and high": ["visible_low", "visible_high"],
+    "open and close": ["open", "close"], "close and open": ["close", "open"],
+    "high and low price": ["high", "low"], "low and high price": ["low", "high"],
+    "range": ["visible_high", "visible_low"], "range visible": ["visible_high", "visible_low"],
+  };
+  if (pairs[expression]) return { kind: "metrics", metrics: pairs[expression]! };
   // Spoken synonyms only. Every value is an existing Metric member, so widening
   // the wording adds no arithmetic and no new data reaches the reply.
   const metrics: Record<string, MetricName> = {
@@ -267,6 +284,7 @@ export function parseQuestionIntent(text: string): Intent {
     "price change": "price_change", change: "price_change", "change in price": "price_change",
     "percent change": "percent_change", "percentage change": "percent_change",
     "change in percent": "percent_change", percent: "percent_change",
+    "high visible": "visible_high", "low visible": "visible_low",
     "visible high": "visible_high", "highest visible price": "visible_high",
     "highest price visible": "visible_high", "high of the visible range": "visible_high",
     "visible low": "visible_low", "lowest visible price": "visible_low",
@@ -336,6 +354,14 @@ function calculateIntent(intent: Extract<Intent, { kind: "metric" }>, input: Cal
 
 export function answerQuestion(input: CalculationInput & { text: string }): Reply {
   const intent = parseQuestionIntent(input.text);
+  if (intent.kind === "metrics") {
+    // Every half must compute, so a partial pair refuses rather than quietly
+    // answering only the side that happened to succeed.
+    const facts = intent.metrics.map((metric) => calculateIntent({ kind: "metric", metric }, input));
+    return SafeReply.parse(facts.every((fact) => fact !== null)
+      ? { kind: "calculation", facts }
+      : { kind: "refusal", reason: "insufficient_data" });
+  }
   if (intent.kind !== "metric") return SafeReply.parse(intent);
   const fact = calculateIntent(intent, input);
   return SafeReply.parse(fact ? { kind: "calculation", facts: [fact] } : { kind: "refusal", reason: "insufficient_data" });

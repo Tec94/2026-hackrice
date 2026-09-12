@@ -170,6 +170,24 @@ test("spoken phrasings reach the metrics they name", () => {
   }
 });
 
+test("area wording and paired metrics answer what the question asked for", () => {
+  // "in this area" is how people refer to the range they have on screen, which
+  // is what the visible metrics already measure.
+  for (const question of ["what's the high in this area", "the high in this area", "high visible"]) {
+    assert.deepEqual(parseQuestionIntent(question), { kind: "metric", metric: "visible_high" }, question);
+  }
+  assert.deepEqual(parseQuestionIntent("what's the low in this area"), { kind: "metric", metric: "visible_low" });
+  // Two values asked in one breath are answered together rather than refused.
+  assert.deepEqual(parseQuestionIntent("what's the low and high in this area"),
+    { kind: "metrics", metrics: ["visible_low", "visible_high"] });
+  assert.deepEqual(parseQuestionIntent("high and low"), { kind: "metrics", metrics: ["high", "low"] });
+  assert.deepEqual(parseQuestionIntent("the range"), { kind: "metrics", metrics: ["visible_high", "visible_low"] });
+  const paired = calculation("what's the low and high in this area");
+  assert.equal(paired.kind, "calculation");
+  assert.equal(paired.facts.length, 2);
+  assert.deepEqual(paired.facts.map((fact) => fact.metric), ["visible_low", "visible_high"]);
+});
+
 test("widened phrasing still refuses advice, future, and news questions", () => {
   // The refusals run before any metric matching, so no amount of added wording
   // can turn one of these into a calculation.
