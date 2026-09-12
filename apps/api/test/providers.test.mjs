@@ -347,16 +347,21 @@ test("a new turn is told what was said and recorded before it, with chart values
 test("a conversational reply is approved once its text arrives, and audio that came first is released in order", async () => {
   const h = await conversationHarness({ context: async () => ({ turns: [] }) });
   h.socket.json({ type: "ConversationText", role: "user", content: "I am 60 percent confident" });
+  await settle();
+  // The learner's words are the transcript, whether or not a function follows;
+  // this is what tells the browser to stop the microphone.
+  assert.deepEqual(h.types(), ["final_transcript"]);
+  assert.equal(h.events[0].text, "I am 60 percent confident");
   // Deepgram streams the first frames of a sentence before the sentence.
   h.socket.emit("message", Buffer.from([1, 0]), true);
   h.socket.emit("message", Buffer.from([2, 0]), true);
   await settle();
-  assert.deepEqual(h.types(), [], "held, not delivered and not failed");
+  assert.deepEqual(h.types(), ["final_transcript"], "held, not delivered and not failed");
   h.socket.json({ type: "ConversationText", role: "assistant", content: "Sixty it is. What is your thesis?" });
   await settle();
-  assert.deepEqual(h.types(), ["response", "audio_start", "audio", "audio"]);
-  assert.deepEqual(h.events[0].reply, { kind: "conversation", text: "Sixty it is. What is your thesis?" });
-  assert.deepEqual([...h.events[2].pcm], [1, 0]);
+  assert.deepEqual(h.types(), ["final_transcript", "response", "audio_start", "audio", "audio"]);
+  assert.deepEqual(h.events[1].reply, { kind: "conversation", text: "Sixty it is. What is your thesis?" });
+  assert.deepEqual([...h.events[3].pcm], [1, 0]);
   h.socket.emit("message", Buffer.from([3, 0]), true);
   h.socket.json({ type: "ConversationText", role: "assistant", content: "So 60 percent, noted." });
   h.socket.json({ type: "AgentAudioDone" });
@@ -399,4 +404,34 @@ test("the prompt for a first turn says so rather than inventing history", () => 
   const prompt = coachPrompt(undefined);
   assert.ok(prompt.includes("(this is the first thing the learner has said)"));
   assert.ok(prompt.includes("(nothing recorded yet)"));
+});
+
+
+test("a function call after the learner's words does not report a second transcript", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [] }), answer: async () => ({
+    kind: "calculation", facts: [{ id: "99999999-9999-4999-8999-999999999999", chartSnapshotId: snapshotId, metric: "close", value: "137.42", unit: "USDT", calculatedThroughOffsetMinutes: 0 }],
+  }) });
+  h.socket.json({ type: "ConversationText", role: "user", content: "and the close?" });
+  h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "c2", name: "get_chart_metric", arguments: JSON.stringify({ question: "what is the close" }) }] });
+  await settle();
+  const transcripts = h.events.filter((event) => event.type === "final_transcript");
+  assert.equal(transcripts.length, 1);
+  assert.equal(transcripts[0].text, "and the close?", "the learner's own words, not the model's rephrasing");
+  assert.deepEqual(h.types(), ["final_transcript", "response"]);
+});
+
+
+test("reporting the transcript closes the input so the provider stops waiting for audio", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [] }) });
+  const before = h.socket.sent.length;
+  h.socket.json({ type: "ConversationText", role: "user", content: "what is the close" });
+  await settle();
+  const sent = h.socket.sent.slice(before).map((raw) => JSON.parse(raw).type);
+  assert.ok(sent.includes("ForceEndTurn"), "the provider is told the learner has finished speaking");
+  assert.equal(h.relay.sendAudio(new Uint8Array([0, 0])), false, "and no further audio is accepted");
+  // Saying it twice must not send it twice.
+  const after = h.socket.sent.length;
+  h.socket.json({ type: "ConversationText", role: "user", content: "what is the close" });
+  await settle();
+  assert.equal(h.socket.sent.length, after);
 });

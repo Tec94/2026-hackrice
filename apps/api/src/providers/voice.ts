@@ -79,6 +79,8 @@ type ActiveTurn = {
   /** Numbers the learner said or wrote; the only ones a conversational reply may repeat. */
   allowed: Set<string>;
   spoken: string[];
+  /** Set once the learner's words for this turn have been reported downstream. */
+  transcribed: boolean;
   resolveReady(value: boolean): void;
 };
 /** About ten seconds at Deepgram's 30 ms frames: longer than any sentence the text could lag. */
@@ -185,21 +187,45 @@ export function createVoiceProvider(options: Options) {
    * server computed and is trusted to repeat it; a turn that only talked may
    * use the learner's own numbers and no others.
    */
+  async function transcript(turn: ActiveTurn, text: string) {
+    if (turn.transcribed || !text.trim()) return;
+    turn.transcribed = true;
+    // The browser stops its microphone once it sees the transcript, so tell the
+    // provider the input is finished too. Without this it waits for audio that
+    // is never coming and ends the turn with CLIENT_MESSAGE_TIMEOUT while the
+    // model is still answering.
+    if (turn.ready && !turn.inputStopped && turn.socket.readyState === WebSocket.OPEN) {
+      turn.inputStopped = true;
+      turn.socket.send(JSON.stringify({ type: "ForceEndTurn" }));
+    }
+    await options.onEvent(turn.binding, { type: "final_transcript", text: text.trim() });
+  }
+
   async function heard(turn: ActiveTurn, role: string | undefined, content: string) {
-    if (role === "user") { for (const value of numbersIn(content)) turn.allowed.add(value); return; }
+    if (role === "user") {
+      for (const value of numbersIn(content)) turn.allowed.add(value);
+      await transcript(turn, content);
+      return;
+    }
     const sentence = content.trim();
     if (role !== "assistant" || !sentence) return;
     turn.spoken.push(sentence);
     if (turn.approvedBy === "function") return;
-    if (!numbersIn(sentence).every((value) => turn.allowed.has(value))) { await fail(turn); return; }
+    if (!numbersIn(sentence).every((value) => turn.allowed.has(value))) {
+      await fail(turn, `spoke a number nobody gave it: "${sentence.slice(0, 120)}"`);
+      return;
+    }
     if (!turn.approved) {
       await options.onEvent(turn.binding, { type: "response", reply: { kind: "conversation", text: sentence } });
       await approve(turn, "speech");
     }
   }
 
-  async function fail(turn: ActiveTurn) {
+  async function fail(turn: ActiveTurn, reason: string) {
     if (!turn.active) return;
+    // The browser only ever learns "provider_unavailable"; this line is the
+    // one place the actual cause is kept. Never includes audio or credentials.
+    console.warn(`[voice] turn ${turn.binding.turnId} failed: ${reason}`);
     terminal(turn);
     await options.onEvent(turn.binding, { type: "unavailable", reason: "provider_failure" });
   }
@@ -240,7 +266,7 @@ export function createVoiceProvider(options: Options) {
     const turn: ActiveTurn = {
       binding, token, model, socket, format, active: true, ready: false,
       inputStopped: false, approved: false, audioStarted: false, resolveReady,
-      heldAudio: [], allowed: new Set(), spoken: [],
+      heldAudio: [], allowed: new Set(), spoken: [], transcribed: false,
     };
     tokens.set(token, turn);
     turns.set(binding.turnId, turn);
@@ -252,15 +278,15 @@ export function createVoiceProvider(options: Options) {
         if (!turn.active) return;
         if (isBinary) {
           const bytes = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
-          if (!bytes.byteLength || bytes.byteLength % 2) { await fail(turn); return; }
+          if (!bytes.byteLength || bytes.byteLength % 2) { await fail(turn, `malformed audio frame of ${bytes.byteLength} bytes`); return; }
           if (!turn.approved) {
             // The controlled path never has audio before its reply. The
             // conversational one does: the provider streams the first frame
             // of a sentence before the sentence itself, so hold it until the
             // text arrives and passes.
-            if (!conversational) { await fail(turn); return; }
+            if (!conversational) { await fail(turn, "audio before the controlled reply"); return; }
             turn.heldAudio.push(bytes);
-            if (turn.heldAudio.length > HELD_AUDIO_LIMIT) await fail(turn);
+            if (turn.heldAudio.length > HELD_AUDIO_LIMIT) await fail(turn, `held ${turn.heldAudio.length} audio frames with no approved sentence`);
             return;
           }
           await deliver(turn, bytes);
@@ -362,14 +388,22 @@ export function createVoiceProvider(options: Options) {
           await options.onEvent(binding, { type: "generated" });
         } else if (event.type === "AgentAudioDone") {
           // Finished speaking without ever producing a reply this server approved.
-          await fail(turn);
+          await fail(turn, `agent finished with no approved reply; spoke ${turn.spoken.length} sentences`);
         } else if (event.type === "FunctionCallRequest") {
           await functionCall(turn, event as unknown as FunctionCallEvent);
-        } else if (event.type === "Error") await fail(turn);
-      }).catch(async () => { try { await fail(turn); } catch { /* The turn was already closed before notification failed. */ } });
+        } else if (event.type === "Error") {
+          await fail(turn, `provider error ${JSON.stringify(event).slice(0, 300)}`);
+        } else if (event.type === "Warning") {
+          // Not fatal on its own, but usually the explanation for the Error that follows.
+          console.warn(`[voice] turn ${turn.binding.turnId} provider warning: ${JSON.stringify(event).slice(0, 300)}`);
+        }
+      }).catch(async (error: unknown) => {
+        try { await fail(turn, `handler threw: ${error instanceof Error ? error.message : String(error)}`); }
+        catch { /* The turn was already closed before notification failed. */ }
+      });
     });
-    socket.on("error", () => { void fail(turn).catch(() => {}); });
-    socket.on("close", () => { void fail(turn).catch(() => {}); });
+    socket.on("error", (error?: Error) => { void fail(turn, `provider socket error: ${error?.message ?? "unknown"}`).catch(() => {}); });
+    socket.on("close", (code?: number, reason?: Buffer) => { void fail(turn, `provider socket closed ${code ?? ""} ${reason?.toString().slice(0, 120) ?? ""}`.trim()).catch(() => {}); });
     return {
       status: "connecting", ready,
       sendAudio(pcm) {
@@ -432,7 +466,7 @@ export function createVoiceProvider(options: Options) {
             || reply.facts.every((fact) => fact.chartSnapshotId === turn.binding.chartSnapshotId);
           if (grounded) {
             text = renderSafeReply(reply);
-            await options.onEvent(turn.binding, { type: "final_transcript", text: asked.data.question });
+            await transcript(turn, asked.data.question);
             await options.onEvent(turn.binding, { type: "response", reply });
             // Only a reply this server computed unlocks playback.
             await approve(turn, "function");
@@ -464,12 +498,12 @@ export function createVoiceProvider(options: Options) {
     if (!turn.active) return jsonResponse(409, { error: { code: "state_conflict" } });
     const userMessage = parsed.data.messages.filter((message) => message.role === "user").at(-1);
     if (typeof userMessage?.content !== "string" || !userMessage.content.trim()) {
-      await fail(turn);
+      await fail(turn, "controlled reply could not be delivered");
       return jsonResponse(400, { error: { code: "invalid_request" } });
     }
     let reply: Reply = unsupported;
     try { await options.onEvent(turn.binding, { type: "final_transcript", text: userMessage.content }); }
-    catch { await fail(turn); return jsonResponse(503, { error: { code: "provider_unavailable" } }); }
+    catch { await fail(turn, "controlled reply could not be delivered"); return jsonResponse(503, { error: { code: "provider_unavailable" } }); }
     try {
       const candidate = SafeReply.parse(await options.answer(turn.binding, userMessage.content));
       if (candidate.kind !== "calculation" || candidate.facts.every((fact) => fact.chartSnapshotId === turn.binding.chartSnapshotId)) reply = candidate;
@@ -479,7 +513,7 @@ export function createVoiceProvider(options: Options) {
       return jsonResponse(409, { error: { code: "state_conflict" } });
     }
     try { await options.onEvent(turn.binding, { type: "response", reply }); }
-    catch { await fail(turn); return jsonResponse(503, { error: { code: "provider_unavailable" } }); }
+    catch { await fail(turn, "controlled reply could not be delivered"); return jsonResponse(503, { error: { code: "provider_unavailable" } }); }
     if (!turn.active) return jsonResponse(409, { error: { code: "state_conflict" } });
     const content = renderSafeReply(reply);
     await approve(turn, "function");
