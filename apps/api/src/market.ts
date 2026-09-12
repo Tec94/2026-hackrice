@@ -223,27 +223,54 @@ type Intent = { kind: "metric"; metric: MetricName; period?: number; drawingId?:
   | { kind: "refusal"; reason: "advice" | "future" | "news" | "unsupported" };
 
 export function parseQuestionIntent(text: string): Intent {
-  const question = text.toLowerCase().trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ");
+  // Speech arrives contracted and conversational. Normalising here, before any
+  // matching, keeps the concept and expression paths below working from one
+  // spelling instead of each growing its own set of prefixes.
+  const question = text.toLowerCase().trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ")
+    .replace(/\b(what|that|it|here)'s\b/g, "$1 is").replace(/\bwhats\b/g, "what is")
+    .replace(/^how much did (?:it|the price) change$/, "what is the price change")
+    .replace(/^how much (?:is |are )?(?:the )?/, "what is the ")
+    .replace(/^how (?:high|low|big) (?:is |was )?(?:the )?/, "what is the ")
+    .replace(/^what should (?:the )?(.+?) be$/, "what is the $1")
+    .replace(/\s+/g, " ").trim();
   if (/\b(news|headline|date|year)\b/.test(question)) return { kind: "refusal", reason: "news" };
   if (/\b(future|next|tomorrow|outcome|predict|prediction|will|win|reveal)\b/.test(question)) return { kind: "refusal", reason: "future" };
-  if (/\b(buy|sell|trade|trading|recommend|advice|should|long|short|profit)\b/.test(question)) return { kind: "refusal", reason: "advice" };
+  // "should" alone also refuses neutral questions such as "what should the RSI
+  // be", so the advice test names the actions being sought instead.
+  if (/\b(buy|sell|trade|trading|recommend|advice|long|short|profit|entry|exit|position|stop loss|take profit)\b/.test(question)
+    || /\bshould (?:i|we|you)\b/.test(question) || /\b(enter|entering)\b/.test(question)) return { kind: "refusal", reason: "advice" };
   const concepts: Record<string, "ema" | "rsi" | "relative_volume" | "invalidation"> = {
     ema: "ema", "exponential moving average": "ema", rsi: "rsi", "relative strength index": "rsi",
     "relative volume": "relative_volume", invalidation: "invalidation",
   };
   const concept = /^(?:what is|explain|define) (?:the |an? )?(.+)$/.exec(question);
   if (concept && concepts[concept[1]!]) return { kind: "concept", concept: concepts[concept[1]!]! };
-  const expression = question.replace(/^(?:(?:what is|calculate|show|give me) )(?:the )?/, "")
+  const expression = question.replace(/^(?:(?:what is|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
+    .replace(/^(?:the |a |an )/, "").replace(/^current /, "")
     .replace(/ (?:for |of )?(?:the )?(?:selected|latest) (?:candle|bar)$/, "").replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
   const indicator = /^(ema|exponential moving average|rsi|relative strength index|relative volume)(?: over| period)? (\d+)(?: bars| periods)?$/.exec(expression);
   if (indicator) {
     const period = Number(indicator[2]);
     if (Number.isSafeInteger(period) && period > 0) return { kind: "metric", metric: concepts[indicator[1]!] as "ema" | "rsi" | "relative_volume", period };
   }
+  // Spoken synonyms only. Every value is an existing Metric member, so widening
+  // the wording adds no arithmetic and no new data reaches the reply.
   const metrics: Record<string, MetricName> = {
-    open: "open", "opening price": "open", high: "high", low: "low", close: "close", "closing price": "close",
-    volume: "volume", "price change": "price_change", "percent change": "percent_change", "percentage change": "percent_change",
-    "visible high": "visible_high", "visible low": "visible_low",
+    open: "open", "opening price": "open", "open price": "open", opening: "open",
+    high: "high", "high price": "high", "highest price": "high",
+    low: "low", "low price": "low", "lowest price": "low",
+    close: "close", "closing price": "close", "close price": "close", closing: "close",
+    price: "close", "last price": "close", "current price": "close",
+    // "trade volume"/"trading volume" are unreachable: the advice guard above
+    // refuses any question containing trade or trading.
+    volume: "volume",
+    "price change": "price_change", change: "price_change", "change in price": "price_change",
+    "percent change": "percent_change", "percentage change": "percent_change",
+    "change in percent": "percent_change", percent: "percent_change",
+    "visible high": "visible_high", "highest visible price": "visible_high",
+    "highest price visible": "visible_high", "high of the visible range": "visible_high",
+    "visible low": "visible_low", "lowest visible price": "visible_low",
+    "lowest price visible": "visible_low", "low of the visible range": "visible_low",
   };
   if (metrics[expression]) return { kind: "metric", metric: metrics[expression]! };
   const drawing = /^distance to drawing ([0-9a-f-]+)$/.exec(expression);

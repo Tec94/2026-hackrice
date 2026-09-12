@@ -141,6 +141,57 @@ test("unsupported text, advice, news, future requests, and unavailable periods u
   assert.deepEqual(parseQuestionIntent("What is RSI?"), { kind: "concept", concept: "rsi" });
 });
 
+test("spoken phrasings reach the metrics they name", () => {
+  // Questions arrive as speech, so the same metric has to survive contractions,
+  // filler verbs, and the conversational word order people actually use.
+  const spoken = {
+    close: ["what's the close", "close", "show me the price", "what is the closing price",
+      "the current price", "tell me the last price", "how much is the close"],
+    open: ["open", "what's the opening price", "the open price"],
+    high: ["whats the high", "what is the high price", "how high is the high"],
+    low: ["the low", "what's the lowest price"],
+    volume: ["how much volume", "what's the volume", "tell me the volume"],
+    price_change: ["price change", "how much did it change", "how much did the price change"],
+    percent_change: ["percent change", "what's the percentage change"],
+    visible_high: ["visible high", "highest price visible", "what is the highest visible price"],
+    visible_low: ["visible low", "lowest price visible"],
+  };
+  for (const [metric, questions] of Object.entries(spoken)) {
+    for (const question of questions) {
+      assert.deepEqual(parseQuestionIntent(question), { kind: "metric", metric },
+        `expected "${question}" to ask for ${metric}`);
+    }
+  }
+  for (const question of ["rsi 14", "what is the rsi 14", "what's the rsi over 14"]) {
+    assert.deepEqual(parseQuestionIntent(question), { kind: "metric", metric: "rsi", period: 14 }, question);
+  }
+  for (const question of ["ema 21", "what is the ema 21", "what should the ema 21 be"]) {
+    assert.deepEqual(parseQuestionIntent(question), { kind: "metric", metric: "ema", period: 21 }, question);
+  }
+});
+
+test("widened phrasing still refuses advice, future, and news questions", () => {
+  // The refusals run before any metric matching, so no amount of added wording
+  // can turn one of these into a calculation.
+  const refusals = {
+    advice: ["should i buy", "should i go long", "should we short this", "should i enter here",
+      "is this a good entry", "what should i do", "give me trading advice", "recommend a trade",
+      "where do i put my stop loss", "what's my take profit", "how much profit can i make"],
+    future: ["what happens next", "will it go up", "what is the outcome", "reveal the answer",
+      "predict the next candle", "what's the price tomorrow"],
+    news: ["any news", "what year is this", "show news headlines", "what's the date"],
+  };
+  for (const [reason, questions] of Object.entries(refusals)) {
+    for (const question of questions) {
+      assert.deepEqual(parseQuestionIntent(question), { kind: "refusal", reason },
+        `expected "${question}" to be refused as ${reason}`);
+    }
+  }
+  // Unrecognised wording stays a refusal rather than guessing a metric.
+  assert.deepEqual(parseQuestionIntent("what is the trend"), { kind: "refusal", reason: "unsupported" });
+  assert.deepEqual(parseQuestionIntent("draw me a triangle"), { kind: "refusal", reason: "unsupported" });
+});
+
 test("evaluation verifies only explicit comparisons using pre-cutoff facts and leaves scores null", () => {
   const input = { id: "33333333-3333-4333-8333-333333333333", submissionId: "44444444-4444-4444-8444-444444444444",
     submission: { ...submission, claimedEvidence: ["close = 111", "close < 0", "Looks strong"] },
