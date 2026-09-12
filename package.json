@@ -2,9 +2,25 @@
   "name": "hackrice-chart-coach",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "test": "npm run build && node --test packages/contracts/test/*.test.mjs"
+    "start": "node --env-file-if-exists=.env apps/api/dist/main.js",
+    "build": "npm run build -w @hackrice/contracts && npm run build -w @hackrice/api",
+    "test": "npm run build && node --test packages/contracts/test/*.test.mjs apps/api/test/*.test.mjs",
+    "dev": "npm run build && node --env-file-if-exists=.env apps/api/dist/main.js",
+    "db:migrate": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js migrate",
+    "data:import": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js import",
+    "jobs:run": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js jobs"
+  },
+  "dependencies": {
+    "@better-auth/infra": "^0.4.9"
+  },
+  "allowScripts": {
+    "bufferutil@4.1.0": true,
+    "esbuild@0.28.2": true,
+    "utf-8-validate@6.0.6": true
   }
 }

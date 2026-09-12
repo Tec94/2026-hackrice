@@ -1,8 +1,8 @@
 # Backend design and integration contract
 
 This document records the September 12, 2026 decisions and the implemented
-shared contracts. It is a design for the backend, not a claim that its services
-are running. The frontend can integrate against
+backend. Local database and provider-transport tests are implemented; live
+credentialed providers and deployment remain unverified. The frontend can integrate against
 [`@hackrice/contracts`](../packages/contracts/src/index.ts).
 
 ## Outcome and scope
@@ -41,13 +41,14 @@ the language itself is the dominant voice-latency factor.
 | Learning memory | Backboard, asynchronously synchronized |
 | Chart integration | TradingView Lightweight Charts, proposed replacement |
 | Market history | Binance SOLUSDT public historical data, verified candidate |
-| Private recordings | Object storage, provider still to be selected |
+| Private recordings | Private persistent filesystem volume, authenticated download |
 
 The backend is one application with modules. Redis, separately deployed
 microservices, and live-market streaming have no demonstrated MVP necessity.
-Better Auth owns its authentication schema; generate it with its current CLI
-when authentication is implemented. Keep authentication sessions separate from
-replay sessions. No Better Auth implementation or generated schema exists yet.
+Better Auth owns its authentication schema, generated with the official Auth
+CLI and migrated with Drizzle. Authentication sessions are separate from
+replay sessions. Explicit local mode uses PGlite for credential-free testing;
+deployment mode requires TigerData and enables the candle hypertable.
 
 ## Voice and the no-advice boundary
 
@@ -222,7 +223,10 @@ Better Auth owns `/api/auth/*`; its generated API is not reimplemented here.
 
 Return 201 for newly created sessions/submissions, 202 for accepted questions
 and deletion, and 200 for other successful JSON responses. Require an
-`Idempotency-Key` UUID for mutations. Scope it to authenticated user, operation,
+`Idempotency-Key` UUID for create, context, question, submission, reveal,
+reflection, and completion mutations. Deletion deduplicates by session;
+receipt refresh and learning retrieval explicitly perform provider status/read
+work and do not accept an idempotency key. Scope keys to authenticated user, operation,
 and resource; identical retries return the recorded response, and different
 payloads using the same key return 409 `idempotency_conflict`. Persist the state
 change, resulting event, and response atomically. No retry count is invented.
@@ -251,7 +255,7 @@ a score. Completion requires reveal and can include a reflection.
 
 ## Voice events and audio
 
-Connect at `WS /api/realtime/sessions/:sessionId` using the same authenticated
+Connect at `WS /api/sessions/:sessionId/events` using the same authenticated
 session and verified origin. `ClientEvent` and `ServerEvent` are strict,
 discriminated schemas with protocol version, event ID, and session ID. Server
 events have a persisted, increasing session sequence. Client IDs deduplicate
@@ -259,8 +263,9 @@ commands; HTTP and WebSocket question paths use the same turn operation.
 
 The client waits for `session.ready` and uses its negotiated PCM format.
 `voice.start` binds a new turn ID to a frozen chart snapshot. The server verifies
-that snapshot before accepting audio. One active voice turn per connection is
-derived from its single microphone stream; interruption finalizes or cancels
+that snapshot before accepting audio. Wait for `voice.ready` before sending
+binary input. One active voice turn per replay session prevents concurrent
+microphone streams from competing for its assistant; interruption finalizes or cancels
 that turn before another starts. A turn ID never identifies a second reply.
 
 Binary frames use the RFC 9562 UUID's 16 bytes followed by complete mono signed
@@ -276,7 +281,8 @@ with the same function used for speech. `assistant.audio.start` identifies the
 following output stream; every binary packet still includes its turn ID.
 `assistant.interrupt` cancels pending work and clears playback for that turn.
 Late provider completions cannot commit an evaluation or emit audio. Record
-actual playback completion separately from successful generation. Final
+actual playback completion separately from successful generation, using the
+client's `assistant.playback.completed` acknowledgment. Final
 transcripts are persisted; cancelled turns may have no final transcript.
 
 On reconnect, `session.resume` supplies the last received server sequence.
@@ -287,12 +293,13 @@ are omitted until the chosen provider configuration proves a supported event.
 
 ## Storage, Backboard, and deletion
 
-Use normal relational tables for Better Auth, replay sessions, immutable chart
-snapshots, turns, submissions, evaluations, facts, events, and synchronization
-jobs. The candle hypertable is separate from personally identifying history.
-Recording objects are private and referenced by opaque recording IDs. An
-authenticated binary recording download route remains an implementation task;
-public history never contains permanent storage URLs.
+Better Auth uses generated relational tables. Each replay session stores its
+snapshots, turns, submissions, evaluations, facts, events, and provider-work
+state as one JSONB aggregate, updated under a row lock. Idempotency records,
+provider owners, deletion jobs, and dataset metadata are separate tables.
+The candle hypertable is separate from personally identifying history.
+Recording files are private and referenced by opaque recording IDs. Downloads
+require session ownership; public history never contains storage paths or URLs.
 
 Backboard provides memory across attempts. Use a separate assistant per user,
 explicitly inserted structured learning records, and `Readonly` retrieval.
@@ -308,8 +315,9 @@ it complicates source deletion and can leak previous outcomes into new attempts.
 Delete all linked memories or rebuild a derived memory from surviving sources.
 Persist sync jobs in TigerData; failures cannot block chart or voice use.
 
-The user's retention requirement is 30 days or deletion on click. Give raw
-audio and final transcripts an expiry based on their own creation time; use
+The user's retention requirement is 30 days or deletion on click. Session
+history expires 30 days after session creation; recordings also carry an
+individual 30-day expiry and are removed with the session if earlier. Use
 the same cleanup operation for manual and scheduled deletion. Reject reads
 as soon as deletion starts, cancel active voice, and prevent pending sync jobs
 from recreating deleted data. The deletion response cannot say completed while
@@ -324,25 +332,30 @@ Persist provider operation acknowledgments and report failures truthfully.
 
 ## Solana integration decision
 
-The user requested Solana, but charting SOL does not itself demonstrate network
-use. A proposed devnet integration commits a salted hash of the final analysis
+The user approved Solana devnet receipts; charting SOL alone is not network
+use. The implemented integration commits a salted hash of the final analysis
 before reveal, then presents the transaction receipt. It must not publish the
 analysis, audio, account identity, or recoverable unsalted guessable payload.
-The salt and commitment remain bound to the immutable submission. Transactions
-and credentials are outside the shared chart-contract implementation until
-the user chooses this integration. No chain writes have been performed.
+The salt and commitment remain bound to the immutable submission, session,
+dataset digest, cutoff, and horizon. Signed bytes are durably persisted before
+send. An uncertain retry reuses those bytes; expired transactions fail rather
+than being silently replaced. Reveal requires confirmed RPC provenance on
+devnet. The salt and full commitment payload are returned only after reveal.
+No live chain writes have been performed.
 
 ## Proof and remaining work
 
-The package compiles and tests input rejection, future-bar boundaries, safe
-reply rendering, snapshot links, interrupted-turn framing, and deletion status.
-These are meaningful contract checks, not substitutes for runtime tests.
+The backend compiles and tests input rejection, future-bar boundaries, safe
+reply rendering, immutable snapshot links, real local authentication,
+HTTP/WebSocket ownership, calculation correctness, interrupted-turn framing,
+provider-transport behavior, receipt gating, deletion, and expiry. Public
+SOLUSDT import and persistent local database startup were exercised successfully.
 
-The application still needs its server, generated Better Auth schema, TigerData
-connection/migrations/import, calculation engine, controlled Think adapter,
-Deepgram/ElevenLabs credentials, private object storage, Backboard integration,
-and deployment. The host must support persistent WebSockets. No deployment
-host or account credentials have been selected in this repository.
+Credentialed TigerData, Deepgram/ElevenLabs playback, Backboard acknowledgments,
+Solana devnet transactions, and deployment remain unverified. The host must
+support persistent WebSockets and a private persistent recording volume. Run
+one API process so the provider coordinator owns all in-flight work; run its
+CLI maintenance sweep only while the server is stopped. No host is provisioned.
 
 Prove the implementation in its actual environment with cross-user resource
 checks, hidden-future rejection through every route, matching chart/tool values,

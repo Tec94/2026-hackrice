@@ -241,10 +241,12 @@ export const ClientEvent = z.discriminatedUnion("type", [
   z.strictObject({ ...clientBase, type: z.literal("voice.cancel"), turnId: Id }),
   z.strictObject({ ...clientBase, type: z.literal("question.text"), ...turnBase, text: Text }),
   z.strictObject({ ...clientBase, type: z.literal("assistant.interrupt"), turnId: Id }),
+  z.strictObject({ ...clientBase, type: z.literal("assistant.playback.completed"), turnId: Id }),
 ]);
 const serverBase = { protocolVersion: z.literal(1), eventId: Id, sessionId: Id, sequence: Revision };
 export const ServerEvent = z.discriminatedUnion("type", [
   z.strictObject({ ...serverBase, type: z.literal("session.ready"), session: PublicSession, inputFormat: AudioFormat, outputFormat: AudioFormat }),
+  z.strictObject({ ...serverBase, type: z.literal("voice.ready"), turnId: Id, format: AudioFormat }),
   z.strictObject({ ...serverBase, type: z.literal("chart.context.updated"), snapshot: ChartSnapshot }),
   z.strictObject({ ...serverBase, type: z.literal("voice.transcript.final"), ...turnBase, text: Text }),
   z.strictObject({ ...serverBase, type: z.literal("assistant.processing"), ...turnBase }),
@@ -276,6 +278,18 @@ export function decodeAudioFrame(frame: Uint8Array): { turnId: string; pcm: Uint
   return { turnId, pcm: frame.subarray(16) };
 }
 
+export const IndicatorValues = z.array(z.strictObject({ indicator: Indicator,
+  values: z.array(z.strictObject({ offsetMinutes: PastOffset, value: Decimal.nullable() })) }));
+export const Receipt = z.strictObject({
+  status: z.enum(["unavailable", "pending", "sent", "confirmed", "failed"]),
+  commitment: z.string().regex(/^[0-9a-f]{64}$/), signature: Text.optional(), cluster: z.literal("devnet"),
+  proof: z.strictObject({ salt: z.string().regex(/^[0-9a-f]{64}$/), hash: z.string().regex(/^[0-9a-f]{64}$/),
+    payload: z.strictObject({ version: z.literal(1), sessionId: Id, submissionId: Id, submission: Submission,
+      datasetDigest: z.string().regex(/^[0-9a-f]{64}$/), cutoffTimeMs: z.number().int(), predictionHorizon: Timeframe }) }).optional(),
+});
+export const Learning = z.strictObject({ status: z.enum(["completed", "pending", "unavailable", "failed"]),
+  records: z.array(z.strictObject({ sourceSessionIds: z.array(Id), category: RubricCategory, reasonCode: EvaluationFinding.shape.reasonCode })) });
+
 export const httpContracts = {
   createSession: { method: "POST", path: "/api/sessions", body: CreateSession, response: PublicSession },
   listSessions: { method: "GET", path: "/api/sessions", response: z.array(PublicSession) },
@@ -292,6 +306,10 @@ export const httpContracts = {
   getHistory: { method: "GET", path: "/api/sessions/:sessionId/history", response: History },
   deleteSession: { method: "DELETE", path: "/api/sessions/:sessionId", response: Deletion },
   getDeletion: { method: "GET", path: "/api/deletions/:deletionId", response: Deletion },
+  getIndicators: { method: "GET", path: "/api/sessions/:sessionId/chart/indicators", query: z.strictObject({ chartSnapshotId: Id }), response: IndicatorValues },
+  getReceipt: { method: "GET", path: "/api/sessions/:sessionId/receipt", response: Receipt },
+  refreshReceipt: { method: "POST", path: "/api/sessions/:sessionId/receipt/refresh", response: Receipt },
+  getLearning: { method: "POST", path: "/api/sessions/:sessionId/learning", response: Learning },
 } as const;
 
 export type Session = z.infer<typeof PublicSession>;
