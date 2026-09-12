@@ -47,6 +47,27 @@ export class VoiceClient {
     turn.socket.send(JSON.stringify(ClientEvent.parse({ protocolVersion: 1, eventId: crypto.randomUUID(), sessionId: this.sessionId, ...command })));
   }
 
+  /**
+   * Turns a microphone failure into something the listener can act on.
+   *
+   * Browsers surface these as the operating system's own wording, so a missing
+   * input device reads as "The object can not be found here", which says
+   * nothing about microphones.
+   */
+  private static microphoneMessage(error: unknown): string | null {
+    const name = error instanceof DOMException ? error.name : '';
+    if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+      return 'No microphone found. Connect one, check Sound settings shows it under Input, then reload.';
+    }
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return 'Microphone access was blocked. Allow it for this site in your browser, then reload.';
+    }
+    if (name === 'NotReadableError' || name === 'AbortError') {
+      return 'The microphone is in use by another app. Close it, then start the conversation again.';
+    }
+    return null;
+  }
+
   async start(capture: () => Promise<ChartContext>) {
     if (this.turn) return;
     if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) {
@@ -104,7 +125,11 @@ export class VoiceClient {
       };
       socket.onerror = () => this.fail(turn, new Error('Could not connect to voice. Check the API and WebSocket proxy.'));
       socket.onclose = () => { if (this.turn === turn) this.fail(turn, new Error('Voice disconnected. Start a new turn to retry.')); };
-    } catch (error) { this.fail(turn, error); }
+    } catch (error) {
+      const message = VoiceClient.microphoneMessage(error);
+      if (message) { this.dispose(turn); this.callbacks.error(message); return; }
+      this.fail(turn, error);
+    }
   }
 
   private async event(turn: Turn, message: ServerMessage) {
