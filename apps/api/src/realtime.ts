@@ -4,6 +4,7 @@ import WebSocket, { WebSocketServer, type RawData } from "ws";
 import * as C from "@hackrice/contracts";
 import { z } from "zod";
 import { createVoiceProvider, type VoiceBinding, type VoiceConfig, type VoiceRelay, type VoiceProviderEvent } from "./providers/voice.js";
+import { applyRating } from "./market.js";
 import { ReplayService } from "./service.js";
 import { appendEvent, ApiFailure, RETENTION_MS } from "./domain.js";
 import { Recordings } from "./recordings.js";
@@ -72,6 +73,15 @@ export class Realtime {
           turn.status = turn.finalTranscript ? "completed" : "failed";
           turn.audioDelivery = live?.sentAudio ? "partial" : "none";
           appendEvent(state, { type: "assistant.completed", turnId: binding.turnId, delivery: turn.audioDelivery });
+        } else if (event.type === "rating") {
+          // Amends the stored evaluation so the feedback page shows the coach's
+          // scores beside the findings computed from candles.
+          const latest = state.evaluations.at(-1);
+          if (latest) {
+            const rated = applyRating(latest, event.rating);
+            state.evaluations[state.evaluations.length - 1] = rated;
+            appendEvent(state, { type: "evaluation.updated", evaluation: rated });
+          }
         } else if (event.type === "draft") {
           appendEvent(state, { type: "analysis.draft", draft: event.draft });
         } else if (event.type === "unavailable") {

@@ -121,6 +121,19 @@ export const SubmissionDraft = z.strictObject({
   riskReasoning: Text.optional(),
 });
 
+/**
+ * The coach's read of the parts of an analysis that arithmetic cannot settle.
+ *
+ * Scores are a model's opinion, kept apart from the computed findings and
+ * never allowed to change whether an evidence claim held up.
+ */
+export const AnalysisRating = z.strictObject({
+  thesisScore: Percentage.optional(),
+  invalidationScore: Percentage.optional(),
+  riskScore: Percentage.optional(),
+  comment: Text.optional(),
+});
+
 export const RecordedSubmission = z.strictObject({
   id: Id,
   sessionId: Id,
@@ -144,6 +157,7 @@ export const EvaluationFinding = z.strictObject({
   reasonCode: z.enum([
     "claim_supported", "claim_contradicted", "missing_comparison", "missing_invalidation",
     "missing_risk_reasoning", "insufficient_data", "subjective_judgment", "uncalibrated_rubric",
+    "model_judgment",
   ]),
 });
 export const Evaluation = z.strictObject({
@@ -335,6 +349,7 @@ export type ChartContext = z.infer<typeof ChartSnapshot>;
 export type AnalysisSubmission = z.infer<typeof Submission>;
 export type AnalysisDraft = z.infer<typeof SubmissionDraft>;
 export type AnalysisEvaluation = z.infer<typeof Evaluation>;
+export type AnalysisCoachRating = z.infer<typeof AnalysisRating>;
 export type ClientMessage = z.infer<typeof ClientEvent>;
 export type ServerMessage = z.infer<typeof ServerEvent>;
 export type HttpOperation = keyof typeof httpContracts;

@@ -4,7 +4,7 @@ import { Decimal } from "decimal.js";
 import { SafeReply, renderSafeReply } from "@hackrice/contracts";
 import {
   MARKET_SOURCE, aggregateCandles, answerQuestion, candleDigest, evaluateSubmission,
-  fetchBinanceCandles, indicatorSeries, normalizeBinanceKlines, parseQuestionIntent, toPublicCandles,
+  applyRating, fetchBinanceCandles, indicatorSeries, normalizeBinanceKlines, parseQuestionIntent, toPublicCandles,
 } from "../dist/market.js";
 
 const minute = 60_000;
@@ -223,6 +223,32 @@ test("correcting a mishearing cannot turn a refused question into an answered on
   assert.deepEqual(parseQuestionIntent("will the r s i go up"), { kind: "refusal", reason: "future" });
   assert.deepEqual(parseQuestionIntent("should i go long on ema 21"), { kind: "refusal", reason: "advice" });
   assert.deepEqual(parseQuestionIntent("predict the e m a tomorrow"), { kind: "refusal", reason: "future" });
+});
+
+test("a coach rating scores judgement without touching computed evidence", () => {
+  const base = {
+    id: "11111111-1111-4111-8111-111111111111", submissionId: "22222222-2222-4222-8222-222222222222",
+    status: "completed", rubricVersion: "explicit-comparison-v1", formulaVersion: "x", overallScore: null,
+    scoreMeaning: "educational_rubric_not_validated_prediction_probability",
+    findings: [
+      { category: "evidence", status: "supported", score: null, factIds: [], reasonCode: "claim_supported" },
+      { category: "structure", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+      { category: "invalidation", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+      { category: "risk_reasoning", status: "insufficient_evidence", score: null, factIds: [], reasonCode: "missing_risk_reasoning" },
+    ],
+  };
+  const rated = applyRating(base, { thesisScore: 72, invalidationScore: 60, riskScore: 90 });
+  const byCategory = Object.fromEntries(rated.findings.map((finding) => [finding.category, finding]));
+  // A comparison against real candles either held or it did not; an opinion
+  // cannot change that.
+  assert.equal(byCategory.evidence.score, null);
+  assert.equal(byCategory.evidence.reasonCode, "claim_supported");
+  assert.equal(byCategory.structure.score, 72);
+  assert.equal(byCategory.structure.reasonCode, "model_judgment");
+  // Nothing was written for risk, so there is nothing to judge.
+  assert.equal(byCategory.risk_reasoning.score, null);
+  // The overall score describes only what was actually rated.
+  assert.equal(rated.overallScore, 66);
 });
 
 test("widened phrasing still refuses advice, future, and news questions", () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import WebSocket, { type RawData } from "ws";
 import { z } from "zod";
-import { AudioFormat, Id, SafeReply, SubmissionDraft, renderSafeReply } from "@hackrice/contracts";
+import { AnalysisRating, AudioFormat, Id, SafeReply, SubmissionDraft, renderSafeReply } from "@hackrice/contracts";
 
 export type VoiceBinding = { userId: string; sessionId: string; turnId: string; chartSnapshotId: string };
 export type VoiceConfig = {
@@ -31,6 +31,10 @@ const COACH_PROMPT = [
   "Record prediction whenever they name a direction, even when they also say what they would do about it.",
   "Write evidence as a comparison such as \"close > 137.42\" when they give a number, otherwise in their words.",
   "After recording, tell them briefly what you noted and that it is on screen for them to review and submit.",
+  "When they ask how their analysis looks, or say they have finished it, call rate_analysis.",
+  "Judge only their reasoning: whether the thesis is specific and follows from the chart, whether the",
+  "invalidation names a level that would actually prove them wrong, and whether the risk is thought through.",
+  "Never judge whether their prediction will turn out right, and never use a number you were not given.",
 ].join(" ");
 type Format = z.infer<typeof AudioFormat>;
 type Reply = z.infer<typeof SafeReply>;
@@ -42,6 +46,7 @@ export type VoiceProviderEvent =
   | { type: "generated" }
   | { type: "cancelled" }
   | { type: "draft"; draft: z.infer<typeof SubmissionDraft> }
+  | { type: "rating"; rating: z.infer<typeof AnalysisRating> }
   | { type: "unavailable"; reason: "configuration_missing" | "playback_unverified" | "provider_failure" };
 export type VoiceRelay = {
   status: "connecting";
@@ -193,6 +198,20 @@ export function createVoiceProvider(options: Options) {
                       riskReasoning: { type: "string", description: "How they think about the risk." },
                     },
                   },
+                }, {
+                  name: "rate_analysis",
+                  description: "Rate the reasoning in the learner's analysis when they ask how it looks or "
+                    + "say they have finished. Scores are 0-100 and judge reasoning quality only, never "
+                    + "whether the prediction will prove correct.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      thesisScore: { type: "number", description: "0-100: is the thesis specific and grounded in the chart?" },
+                      invalidationScore: { type: "number", description: "0-100: does it name a level that would prove them wrong?" },
+                      riskScore: { type: "number", description: "0-100: is the risk actually reasoned about?" },
+                      comment: { type: "string", description: "One sentence on what would make it stronger." },
+                    },
+                  },
                 }],
               } : {
                 provider: { type: "open_ai", model },
@@ -244,6 +263,19 @@ export function createVoiceProvider(options: Options) {
     const calls = event.functions ?? [];
     for (const call of calls) {
       let text = renderSafeReply(unsupported);
+      if (call.name === "rate_analysis") {
+        try {
+          const rating = AnalysisRating.parse(JSON.parse(call.arguments || "{}"));
+          if (await options.isTurnActive(turn.binding)) {
+            await options.onEvent(turn.binding, { type: "rating", rating });
+            text = rating.comment ?? "Rated on the feedback page.";
+          } else text = "That session is no longer open.";
+        } catch { text = "I could not rate that."; }
+        turn.approved = true;
+        if (turn.socket.readyState !== WebSocket.OPEN) return;
+        turn.socket.send(JSON.stringify({ type: "FunctionCallResponse", id: call.id, name: call.name, content: text }));
+        continue;
+      }
       if (call.name === "record_analysis") {
         try {
           const draft = SubmissionDraft.parse(JSON.parse(call.arguments || "{}"));

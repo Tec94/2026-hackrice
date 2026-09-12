@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Decimal } from "decimal.js";
 import { z } from "zod";
 import {
-  Candle, ChartSnapshot, Evaluation, Fact, Indicator, SafeReply, Submission,
+  AnalysisRating, Candle, ChartSnapshot, Evaluation, Fact, Indicator, SafeReply, Submission,
   Timeframe, timeframeMinutes, type ChartContext, type AnalysisSubmission,
 } from "@hackrice/contracts";
 
@@ -453,4 +453,35 @@ export function evaluateSubmission(input: CalculationInput & {
     formulaVersion: FORMULA_VERSION, overallScore: null, findings,
     scoreMeaning: "educational_rubric_not_validated_prediction_probability",
   }), facts };
+}
+
+/**
+ * Adds the coach's scores to the categories the evaluator left unrated.
+ *
+ * Evidence findings are computed from candles and are never touched: a model
+ * opinion cannot overturn a comparison that either held or did not. The
+ * overall score averages only what the model actually rated, so it describes
+ * the judged part of the analysis rather than the whole of it.
+ */
+export function applyRating(
+  evaluation: z.infer<typeof Evaluation>,
+  rating: z.infer<typeof AnalysisRating>,
+): z.infer<typeof Evaluation> {
+  const scores: Record<string, number | undefined> = {
+    structure: rating.thesisScore,
+    invalidation: rating.invalidationScore,
+    risk_reasoning: rating.riskScore,
+  };
+  const findings = evaluation.findings.map((finding) => {
+    const score = scores[finding.category];
+    // Only categories the evaluator declined to judge can be rated, and only
+    // where the learner actually wrote something to judge.
+    if (score === undefined || finding.category === "evidence" || finding.status !== "not_assessable") return finding;
+    return { ...finding, score, reasonCode: "model_judgment" as const };
+  });
+  const rated = findings.filter((finding) => finding.score !== null && finding.score !== undefined);
+  const overallScore = rated.length
+    ? Math.round(rated.reduce((total, finding) => total + (finding.score ?? 0), 0) / rated.length)
+    : null;
+  return Evaluation.parse({ ...evaluation, findings, overallScore });
 }
