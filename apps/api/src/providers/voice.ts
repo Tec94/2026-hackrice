@@ -10,7 +10,21 @@ export type VoiceConfig = {
   elevenLabsVoiceId: string;
   thinkEndpointUrl: string;
   playbackValidated: boolean;
+  /** Deepgram-hosted model that talks to the caller. Unset keeps the
+   *  controlled endpoint, where the reply text is the calculation itself. */
+  conversationModel?: string;
 };
+type FunctionCallEvent = { functions?: { id: string; name: string; arguments: string }[] };
+/** The model may choose words; it may not choose numbers. */
+const COACH_PROMPT = [
+  "You are a trading chart coach helping someone read a historical chart.",
+  "For every question about a price, volume, change, high, low, or indicator you MUST call get_chart_metric",
+  "and pass the learner's question through in their own words.",
+  "Speak the text it returns. Never invent, estimate, round, or recall a number yourself.",
+  "If it returns a refusal, say that and explain you can only describe what is on the chart.",
+  "Never predict future prices, never give trading advice, and never say what happens next.",
+  "Keep replies to one or two short spoken sentences.",
+].join(" ");
 type Format = z.infer<typeof AudioFormat>;
 type Reply = z.infer<typeof SafeReply>;
 export type VoiceProviderEvent =
@@ -133,7 +147,27 @@ export function createVoiceProvider(options: Options) {
             },
             agent: {
               listen: { provider: { type: "deepgram", model: "flux-general-en", version: "v2" } },
-              think: {
+              think: config.conversationModel ? {
+                provider: { type: "open_ai", model: config.conversationModel },
+                prompt: COACH_PROMPT,
+                functions: [{
+                  name: "get_chart_metric",
+                  description: "Return one computed value from the chart the learner is looking at. "
+                    + "Call this for every question about a price, volume, change, or indicator. "
+                    + "Speak the returned text and never state a number that did not come from it.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      question: {
+                        type: "string",
+                        description: "The learner's question, in their own words, such as "
+                          + "\"what is the closing price\" or \"the high and low in this area\".",
+                      },
+                    },
+                    required: ["question"],
+                  },
+                }],
+              } : {
                 provider: { type: "open_ai", model },
                 endpoint: { url: endpoint.toString(), headers: { authorization: `Bearer ${token}` } },
                 prompt: "The configured endpoint supplies the complete approved response.",
@@ -155,6 +189,8 @@ export function createVoiceProvider(options: Options) {
         } else if (event.type === "AgentAudioDone" && turn.approved) {
           terminal(turn);
           await options.onEvent(binding, { type: "generated" });
+        } else if (event.type === "FunctionCallRequest") {
+          await functionCall(turn, event as unknown as FunctionCallEvent);
         } else if (event.type === "Error") await fail(turn);
       }).catch(async () => { try { await fail(turn); } catch { /* The turn was already closed before notification failed. */ } });
     });
@@ -174,6 +210,35 @@ export function createVoiceProvider(options: Options) {
       },
       cancel() { cancel(binding.turnId); },
     };
+  }
+
+  /** One function call from the conversational model, answered from the chart. */
+  async function functionCall(turn: ActiveTurn, event: FunctionCallEvent) {
+    const calls = event.functions ?? [];
+    for (const call of calls) {
+      let text = renderSafeReply(unsupported);
+      try {
+        const asked = z.object({ question: z.string() }).safeParse(JSON.parse(call.arguments || "{}"));
+        if (asked.success && await options.isTurnActive(turn.binding)) {
+          // The same calculator the typed path uses, so the refusals and the
+          // blind boundary apply to anything the model asks for.
+          const reply = SafeReply.parse(await options.answer(turn.binding, asked.data.question));
+          const grounded = reply.kind !== "calculation"
+            || reply.facts.every((fact) => fact.chartSnapshotId === turn.binding.chartSnapshotId);
+          if (grounded) {
+            text = renderSafeReply(reply);
+            await options.onEvent(turn.binding, { type: "final_transcript", text: asked.data.question });
+            await options.onEvent(turn.binding, { type: "response", reply });
+            // Only a reply this server computed unlocks playback.
+            turn.approved = true;
+          }
+        }
+      } catch { /* The fixed refusal above still answers the model. */ }
+      if (turn.socket.readyState !== WebSocket.OPEN) return;
+      turn.socket.send(JSON.stringify({
+        type: "FunctionCallResponse", id: call.id, name: call.name, content: text,
+      }));
+    }
   }
 
   async function handleThink(authorization: string | undefined, input: unknown): Promise<ThinkResponse> {

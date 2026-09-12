@@ -25,6 +25,7 @@ export async function config(env: NodeJS.ProcessEnv = process.env) {
     deepgramApiKey: env.DEEPGRAM_API_KEY!, elevenLabsApiKey: env.ELEVENLABS_API_KEY!,
     elevenLabsVoiceId: env.ELEVENLABS_VOICE_ID!, thinkEndpointUrl: env.DEEPGRAM_THINK_URL!,
     playbackValidated: env.VOICE_PLAYBACK_VALIDATED === "true",
+    ...(env.VOICE_CONVERSATION_MODEL ? { conversationModel: env.VOICE_CONVERSATION_MODEL } : {}),
   };
   let solana: SolanaReceiptConfig | undefined;
   if (!!env.SOLANA_DEVNET_RPC_URL !== !!env.SOLANA_DEVNET_KEYPAIR_PATH) throw new Error("Set both Solana devnet RPC URL and keypair path, or neither.");

@@ -188,6 +188,18 @@ test("area wording and paired metrics answer what the question asked for", () =>
   assert.deepEqual(paired.facts.map((fact) => fact.metric), ["visible_low", "visible_high"]);
 });
 
+test("the conversational model's rephrasings reach the same metrics", () => {
+  // A model asked "the high and low in this area" splits it and says "high
+  // price in this area", so the wording it produces has to resolve too.
+  assert.deepEqual(parseQuestionIntent("what is the high price in this area"),
+    { kind: "metric", metric: "visible_high" });
+  assert.deepEqual(parseQuestionIntent("what is the low price in this area"),
+    { kind: "metric", metric: "visible_low" });
+  assert.deepEqual(parseQuestionIntent("the closing price in this area"), { kind: "metric", metric: "close" });
+  assert.deepEqual(parseQuestionIntent("high and low price visible"),
+    { kind: "metrics", metrics: ["visible_high", "visible_low"] });
+});
+
 test("widened phrasing still refuses advice, future, and news questions", () => {
   // The refusals run before any metric matching, so no amount of added wording
   // can turn one of these into a calculation.
