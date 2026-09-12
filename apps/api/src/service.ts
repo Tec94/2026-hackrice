@@ -160,6 +160,10 @@ export class ReplayService {
   async reveal(userId: string, sessionId: string, key: string) {
     return this.store.mutate(userId, "reveal", key, {}, sessionId, async (tx) => {
       const state = await this.store.read(userId, sessionId, tx);
+      if (["revealed", "completed"].includes(state.public.status)) {
+        const previous = state.events.find(event => event.type === "session.revealed");
+        if (previous?.type === "session.revealed") return C.Reveal.parse({ ...previous.result, session: state.public });
+      }
       if (state.public.status !== "submitted" || !receiptAllowsReveal(state.receipt) || state.receipt?.commitment !== state.commitment?.hash) return fail("state_conflict", 409);
       const candles = await this.store.candles(state.datasetId, tx);
       const reference = candles.find((c) => c.closeTimeMs === state.cutoffTimeMs);

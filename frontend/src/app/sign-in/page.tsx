@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button, ErrorBanner, Input } from "@/components/ui";
-import { signIn, signUp } from "@/services/auth-client";
+import { safeReturnPath, signIn, signUp } from "@/services/auth-client";
 
 /**
  * `useSearchParams` opts a route out of static prerendering, so the form is
@@ -21,7 +21,8 @@ export default function SignInPage() {
 function SignInForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") ?? "/";
+  const requestedNext = params.get("next") ?? "/";
+  const next = safeReturnPath(requestedNext);
 
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
   const [name, setName] = useState("");

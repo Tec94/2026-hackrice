@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import type { z } from "zod";
@@ -30,6 +31,8 @@ export default function OutcomeRevealPage({
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = use(params);
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
 
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
@@ -61,7 +64,7 @@ export default function OutcomeRevealPage({
     } catch (e) {
       setError(
         isApiError(e, "state_conflict")
-          ? "This session has not been submitted yet. Submit your analysis before revealing."
+          ? "Reveal requires a submitted analysis and a confirmed Solana devnet receipt. Check the receipt on the feedback page."
           : e instanceof Error
             ? e.message
             : "Could not reveal the outcome.",
@@ -175,7 +178,6 @@ export default function OutcomeRevealPage({
                   rows={4}
                   value={reflection}
                   onChange={(e) => setReflection(e.target.value)}
-                  onBlur={saveReflection}
                   placeholder="What would you look at differently next time?"
                 />
               </Card>
@@ -183,9 +185,18 @@ export default function OutcomeRevealPage({
               <div className="flex justify-end gap-2 pb-1">
                 <Button
                   variant="primary"
-                  onClick={() => void request("complete", { params: { sessionId } })}
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true); setError(null);
+                    try {
+                      if (reflection.trim()) await request("reflect", { params: { sessionId }, body: { text: reflection.trim() } });
+                      await request("complete", { params: { sessionId } });
+                      router.push("/history");
+                    } catch { setError("Could not save and complete the session. Please try again."); }
+                    finally { setSaving(false); }
+                  }}
                 >
-                  Complete session
+                  {saving ? "Saving…" : "Save and complete session"}
                 </Button>
               </div>
             </>

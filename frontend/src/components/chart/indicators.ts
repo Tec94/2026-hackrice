@@ -123,6 +123,7 @@ export function rsi(candles: Candle[], period = 14): LinePoint[] {
 }
 
 function rsiValue(gain: number, loss: number): number {
+  if (gain === 0 && loss === 0) return 50;
   if (loss === 0) return 100;
   const rs = gain / loss;
   return 100 - 100 / (1 + rs);

@@ -8,7 +8,7 @@ import { createBackboardProvider } from "./providers/backboard.js";
 
 const settings = await config();
 if (settings.local) await mkdir(dirname(settings.localPath), { recursive: true });
-const db = await connectDatabase({ url: settings.databaseURL, local: settings.local, localPath: settings.localPath });
+const db = await connectDatabase({ url: settings.databaseURL, local: settings.local, localPath: settings.localPath, allowUnverifiedTLS: settings.allowUnverifiedTLS });
 await migrate(db);
 const app = await buildApp({ db, recordingsDirectory: settings.recordingsDirectory, baseURL: settings.baseURL,
   authSecret: settings.authSecret, voiceConfig: settings.voice,

@@ -13,8 +13,15 @@ const nextConfig = {
    * both without CORS or cross-site cookie settings.
    */
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` }];
+    return [
+      { source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` },
+      { source: "/health", destination: `${API_ORIGIN}/health` },
+      { source: "/internal/think", destination: `${API_ORIGIN}/internal/think` },
+    ];
   },
 };
 
-export default nextConfig;
+export default (phase) => ({
+  ...nextConfig,
+  distDir: phase === 'phase-development-server' ? '.next-dev' : '.next',
+});

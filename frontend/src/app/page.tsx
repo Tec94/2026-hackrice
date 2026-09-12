@@ -17,13 +17,13 @@ const STEPS = [
   },
   {
     n: "02",
-    title: "Explain it out loud",
-    body: "Hold to talk. Ask the coach about anything visible, then record your read — the thesis, the evidence, what would prove you wrong.",
+    title: "Explain your reasoning",
+    body: "Ask for chart calculations, then write your thesis, evidence, and what would prove you wrong. Text is available; voice integration is still in progress.",
   },
   {
     n: "03",
-    title: "Graded on reasoning",
-    body: "Then the chart plays forward. You are scored on how you thought, not on whether the candle went your way.",
+    title: "Review the evidence",
+    body: "Explicit numerical claims are checked against the chart. Unassessable claims stay unscored. Reveal requires a confirmed Solana devnet receipt.",
   },
 ];
 
@@ -102,8 +102,8 @@ export default function LandingPage() {
 
             <p className="mt-6 max-w-xl text-lead leading-relaxed text-ink-muted">
               Chartroom hides the right-hand side of a real chart and asks you to explain what you
-              see, out loud. Then it shows you what happened — and grades your reasoning, not your
-              luck.
+              see. Check your calculations, commit your analysis, and review the evidence without
+              being told what to do.
             </p>
 
             <div className="mt-9 flex flex-wrap gap-3">

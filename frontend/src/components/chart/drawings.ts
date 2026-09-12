@@ -27,7 +27,7 @@ export const DRAWING_COLOR = "#d4a24b";
 
 export function createDrawing(kind: DrawingKind, a: Point, b: Point): Drawing {
   return {
-    id: `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    id: crypto.randomUUID(),
     kind,
     a,
     b,

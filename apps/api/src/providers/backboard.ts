@@ -120,9 +120,10 @@ export function createBackboardProvider(options: Options) {
     for (const item of Array.isArray(result.data.retrieved_memories) ? result.data.retrieved_memories : []) {
       const memory = recordObject(item);
       const memoryId = optionalId(memory.id) ?? optionalId(memory.memory_id);
-      if (typeof memory.content !== "string" || !memoryId) continue;
+      const content = typeof memory.memory === "string" ? memory.memory : memory.content;
+      if (typeof content !== "string" || !memoryId) continue;
       try {
-        const parsed = LearningRecord.safeParse(JSON.parse(memory.content));
+        const parsed = LearningRecord.safeParse(JSON.parse(content));
         if (parsed.success) {
           records.push(parsed.data);
           links.push({ ...owner, sourceSessionIds: parsed.data.sourceSessionIds, memoryIds: [memoryId], threadIds: [], status: "stored" });

@@ -39,7 +39,7 @@ export function HeroChart() {
     <div className="rounded-xl2 border border-line bg-panel p-3 shadow-lift sm:p-4">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="rounded-md border border-accent-500/45 px-2.5 py-1 text-micro font-medium text-accent-300">
-          Historical Replay
+          Illustrative preview
         </span>
         <span className="nums text-base text-ink-muted">SOL/USDT · 15m</span>
         <span className="nums ml-auto text-base text-ink-faint">30 candles hidden</span>
@@ -49,7 +49,7 @@ export function HeroChart() {
         viewBox={`0 0 ${HERO_W} ${HERO_H}`}
         className="h-auto w-full"
         role="img"
-        aria-label="A historical SOL/USDT 15-minute candlestick chart. The right-hand portion is shaded and hidden until you commit to an analysis."
+        aria-label="Illustrative candlestick chart preview, not session market data."
       >
         {/* Horizontal price grid */}
         {gridPrices.map((p) => (

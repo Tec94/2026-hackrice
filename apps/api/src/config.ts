@@ -9,7 +9,10 @@ export async function config(env: NodeJS.ProcessEnv = process.env) {
   const local = env.DATABASE_MODE === "local";
   if (env.DATABASE_MODE && !["local", "tigerdata"].includes(env.DATABASE_MODE)) throw new Error("DATABASE_MODE must be local or tigerdata.");
   const baseURL = z.url().parse(env.APP_URL);
-  if (!local && new URL(baseURL).protocol !== "https:") throw new Error("Hosted APP_URL must use HTTPS.");
+  const appURL = new URL(baseURL);
+  const loopbackHTTP = appURL.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(appURL.hostname);
+  if (appURL.protocol !== "https:" && !loopbackHTTP) throw new Error("APP_URL must use HTTPS except on loopback for local testing.");
+  if (env.DATABASE_ALLOW_UNVERIFIED_TLS && !["true", "false"].includes(env.DATABASE_ALLOW_UNVERIFIED_TLS)) throw new Error("DATABASE_ALLOW_UNVERIFIED_TLS must be true or false.");
   if (!local && !env.DATABASE_URL) throw new Error("DATABASE_URL is required for TigerData.");
   if (!local && !env.BETTER_AUTH_SECRET) throw new Error("BETTER_AUTH_SECRET is required outside explicit local mode.");
   // Better Auth requires at least 32 characters. Ephemeral local secrets invalidate login cookies on restart.
@@ -30,7 +33,7 @@ export async function config(env: NodeJS.ProcessEnv = process.env) {
     solana = { network: "devnet", rpcUrl: env.SOLANA_DEVNET_RPC_URL, secretKey: Uint8Array.from(secret) };
   }
   return {
-    local, databaseURL: env.DATABASE_URL, localPath: resolve(env.LOCAL_DATABASE_PATH ?? ".data/postgres"),
+    local, databaseURL: env.DATABASE_URL, allowUnverifiedTLS: env.DATABASE_ALLOW_UNVERIFIED_TLS === "true", localPath: resolve(env.LOCAL_DATABASE_PATH ?? ".data/postgres"),
     recordingsDirectory: resolve(env.RECORDINGS_PATH ?? ".data/recordings"), baseURL, authSecret, voice, solana,
     backboardApiKey: env.BACKBOARD_API_KEY,
     port: z.coerce.number().int().min(0).max(65535).parse(env.PORT ?? (new URL(baseURL).port || (new URL(baseURL).protocol === "https:" ? 443 : 80))),

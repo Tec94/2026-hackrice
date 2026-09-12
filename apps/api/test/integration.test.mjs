@@ -292,6 +292,7 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
     assert.equal(reveal.referenceClose, candles.find((candle) => candle.closeTimeMs === cutoff).close);
     assert.equal(reveal.horizonClose, candles.at(-1).close);
     assert.deepEqual(status(await request(alice.cookie, "POST", `/api/sessions/${session.id}/reveal`, undefined, revealKey), 200), reveal);
+    assert.deepEqual(status(await request(alice.cookie, "POST", `/api/sessions/${session.id}/reveal`), 200), reveal);
     const receipt = status(await request(alice.cookie, "GET", `/api/sessions/${session.id}/receipt`), 200);
     assert.equal(verifyCommitment(receipt.proof.payload, receipt.proof.salt, receipt.commitment), true);
     const revealedBars = status(await request(alice.cookie, "GET", `/api/sessions/${session.id}/chart/bars?timeframe=5m&from=0&to=120`), 200);

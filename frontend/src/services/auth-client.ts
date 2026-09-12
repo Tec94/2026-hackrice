@@ -12,6 +12,10 @@ export interface AuthUser {
   email: string;
 }
 
+export function safeReturnPath(path: string): string {
+  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\") ? path : "/";
+}
+
 async function post(path: string, body: unknown): Promise<{ user: AuthUser }> {
   const response = await fetch(`/api/auth/${path}`, {
     method: "POST",

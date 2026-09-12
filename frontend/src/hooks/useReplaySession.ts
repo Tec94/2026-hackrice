@@ -58,7 +58,14 @@ export function useReplaySession(sessionId: string | null) {
 
       try {
         const session = await request("getSession", { params: { sessionId: id } });
+        let snapshot = await request("getChartContext", { params: { sessionId: id } });
         const tf = timeframe ?? session.timeframe;
+        if (timeframe && timeframe !== snapshot.timeframe) {
+          const { id: snapshotId, sessionId: ownerId, revision, ...context } = snapshot;
+          snapshot = await request("updateChartContext", { params: { sessionId: id }, body: { ...context, timeframe, expectedRevision: revision, selectedCandleOffsetMinutes: undefined, drawings: [] } });
+          session.timeframe = timeframe;
+          session.latestChartRevision = snapshot.revision;
+        }
 
         const bars = await request("getBars", {
           params: { sessionId: id },
@@ -69,7 +76,7 @@ export function useReplaySession(sessionId: string | null) {
         setState({
           session,
           candles: toChartCandles(bars.bars),
-          snapshot: null,
+          snapshot,
           loading: false,
           error: null,
           unauthenticated: false,

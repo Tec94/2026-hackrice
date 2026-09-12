@@ -160,9 +160,9 @@ test("Backboard accepts only code records and tracks confirmed memory/source ide
   assert.deepEqual(result.link.sourceSessionIds, [sessionId]);
 });
 
-test("Readonly retrieval ignores model prose and malformed memories but preserves provenance", async () => {
+for (const contentField of ["content", "memory"]) test(`Readonly retrieval validates ${contentField} records and preserves provenance`, async () => {
   let request;
-  const provider = createBackboardProvider({ apiKey: "test-key", fetch: async (_url, init) => { request = JSON.parse(init.body); return reply(200, { thread_id: threadId, content: "Buy SOL now", retrieved_memories: [{ id: memoryId, content: JSON.stringify(record) }, { id: turnId, content: JSON.stringify({ ...record, advice: "buy" }) }] }); } });
+  const provider = createBackboardProvider({ apiKey: "test-key", fetch: async (_url, init) => { request = JSON.parse(init.body); return reply(200, { thread_id: threadId, content: "Buy SOL now", retrieved_memories: [{ id: memoryId, [contentField]: JSON.stringify(record) }, { id: turnId, [contentField]: JSON.stringify({ ...record, advice: "buy" }) }] }); } });
   const result = await provider.retrieve(owner);
   assert.equal(request.memory, "Readonly");
   assert.equal(request.web_search, "off");

@@ -13,6 +13,9 @@ import type { ActiveTool, ChartHandle } from "@/components/chart/TradingViewChar
 import type { Drawing } from "@/components/chart/drawings";
 import { useReplaySession } from "@/hooks/useReplaySession";
 import type { ChartCandle, Timeframe } from "@/adapters/chart";
+import { timeToOffset } from "@/adapters/chart";
+import { request } from "@/services/api-client";
+import { ChartContextInput } from "@hackrice/contracts";
 
 /** The chart touches `document` on init, so it must never render on the server. */
 const TradingViewChart = dynamic(
@@ -49,6 +52,22 @@ export default function ReplaySessionPage({
   const [drawings, setDrawings] = useState<Drawing[]>([]);
 
   const chartRef = useRef<ChartHandle>(null);
+  const captureContext = useCallback(async () => {
+    if (!session) throw new Error("Wait for the chart to load.");
+    const current = await request("getChartContext", { params: { sessionId } });
+    const visible = chartRef.current?.visibleCandles() ?? candles;
+    if (!visible.length) throw new Error("Pan back to the historical candles before asking.");
+    const from = visible[0].offsetMinutes;
+    const to = Math.min(0, visible[visible.length - 1].offsetMinutes + ({ "5m": 5, "15m": 15, "1h": 60 }[session.timeframe]));
+    return request("updateChartContext", { params: { sessionId }, body: ChartContextInput.parse({
+      expectedRevision: current.revision, timeframe: session.timeframe, visibleRange: { from, to },
+      ...(selected && selected.offsetMinutes >= from && selected.offsetMinutes < to ? { selectedCandleOffsetMinutes: selected.offsetMinutes } : {}),
+      indicators: indicators.flatMap(id => id === "ema21" ? [{ name: "ema", period: 21 }] : id === "rsi14" ? [{ name: "rsi", period: 14 }] : []),
+      drawings: drawings.filter(d => d.kind === "horizontal" || d.kind === "trendline").map(d => d.kind === "horizontal"
+        ? { id: d.id, type: "horizontal_line", price: String(d.a.price) }
+        : { id: d.id, type: "trendline", start: { offsetMinutes: timeToOffset(d.a.time), price: String(d.a.price) }, end: { offsetMinutes: timeToOffset(d.b.time), price: String(d.b.price) } }),
+    }) });
+  }, [session, sessionId, candles, selected, indicators, drawings]);
 
   // Send the user to sign-in when the session cookie is missing or expired.
   useEffect(() => {
@@ -100,7 +119,8 @@ export default function ReplaySessionPage({
       <ReplayHeader
         symbol={session?.symbol ?? "SOL/USDT"}
         timeframe={session?.timeframe}
-        onTimeframeChange={onTimeframeChange}
+        onTimeframeChange={!loading && session?.status === "exploring" ? onTimeframeChange : undefined}
+        connected={!!session && !error}
         phase="explore"
       />
 
@@ -131,6 +151,10 @@ export default function ReplaySessionPage({
             drawingCount={drawings.length}
             onClearDrawings={() => setDrawings([])}
             onResetView={() => chartRef.current?.resetView()}
+            onToggleFullscreen={() => {
+              if (document.fullscreenElement) void document.exitFullscreen();
+              else void document.getElementById("workspace")?.requestFullscreen();
+            }}
           />
           <div className="relative min-h-0 flex-1">
             {loading && !candles.length ? (
@@ -161,7 +185,8 @@ export default function ReplaySessionPage({
         </section>
 
         <div className={`min-h-0 flex-1 flex-col ${tab === "coach" ? "flex" : "hidden"} lg:flex`}>
-          <CoachSidebar sessionId={sessionId} />
+          {session?.status === "exploring" ? <CoachSidebar sessionId={sessionId} captureContext={captureContext} disabled={loading} /> :
+            <div className="space-y-3 p-5"><p className="text-ink-muted">{session ? "Your analysis is already committed." : "Loading session…"}</p>{session && <Button onClick={() => router.push(`/replay/${sessionId}/feedback`)}>View feedback</Button>}</div>}
         </div>
       </main>
     </div>

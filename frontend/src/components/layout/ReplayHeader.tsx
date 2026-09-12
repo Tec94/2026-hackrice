@@ -32,8 +32,8 @@ export function ReplayHeader({
   symbol = "SOL/USDT",
   timeframe = "15m" as Timeframe,
   onTimeframeChange,
-  elapsed = "08:42",
-  connected = true,
+  elapsed,
+  connected,
   phase = "explore",
 }: ReplayHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -97,17 +97,17 @@ export function ReplayHeader({
       </nav>
 
       <div className="ml-auto flex items-center gap-3">
-        <span className="nums hidden text-tiny text-ink-muted sm:inline" aria-label="Session time">
+        {elapsed && <span className="nums hidden text-tiny text-ink-muted sm:inline" aria-label="Session time">
           {elapsed}
-        </span>
+        </span>}
 
-        <span className="flex items-center gap-1.5 text-micro text-ink-muted">
+        {connected !== undefined && <span className="flex items-center gap-1.5 text-micro text-ink-muted">
           <span
             aria-hidden="true"
             className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-bull" : "bg-bear")}
           />
-          <span className="hidden sm:inline">{connected ? "Connected" : "Reconnecting…"}</span>
-        </span>
+          <span className="hidden sm:inline">{connected ? "Session loaded" : "Loading session"}</span>
+        </span>}
 
         <div className="relative">
           <button
@@ -122,7 +122,7 @@ export function ReplayHeader({
           {menuOpen && (
             <div className="absolute right-0 top-full z-30 mt-1 w-48 animate-rise-in rounded-xl2 bg-panel p-1 shadow-lift ring-1 ring-inset ring-line">
               {[
-                { href: "/dashboard", label: "Dashboard", Icon: LayoutDashboard },
+                { href: "/", label: "Markets", Icon: LayoutDashboard },
                 { href: "/history", label: "Session history", Icon: History },
               ].map(({ href, label, Icon }) => (
                 <Link

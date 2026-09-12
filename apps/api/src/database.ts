@@ -16,7 +16,16 @@ export interface Database extends Queryable {
   mode: "tigerdata" | "local";
 }
 
-export async function connectDatabase(options: { url?: string; localPath?: string; local?: boolean }): Promise<Database> {
+export function postgresOptions(url: string, allowUnverifiedTLS = false): pg.PoolConfig {
+  if (!allowUnverifiedTLS) return { connectionString: url };
+  const connection = new URL(url);
+  // Explicit hackathon opt-in: encrypted transport without server identity verification.
+  // pg connection-string SSL parameters override the separate ssl object.
+  for (const name of ["ssl", "sslmode", "sslcert", "sslkey", "sslrootcert", "uselibpqcompat"]) connection.searchParams.delete(name);
+  return { connectionString: connection.toString(), ssl: { rejectUnauthorized: false } };
+}
+
+export async function connectDatabase(options: { url?: string; localPath?: string; local?: boolean; allowUnverifiedTLS?: boolean }): Promise<Database> {
   if (options.local) {
     const client = new PGlite(options.localPath ?? "memory://");
     await client.waitReady;
@@ -28,7 +37,7 @@ export async function connectDatabase(options: { url?: string; localPath?: strin
     };
   }
   if (!options.url) throw new Error("DATABASE_URL is required for TigerData. Use DATABASE_MODE=local explicitly for local development.");
-  const pool = new pg.Pool({ connectionString: options.url });
+  const pool = new pg.Pool(postgresOptions(options.url, options.allowUnverifiedTLS));
   return {
     mode: "tigerdata", orm: pgDrizzle(pool, { schema: authSchema }),
     query: async (sql, params) => ({ rows: (await pool.query(sql, params)).rows }),

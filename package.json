@@ -8,6 +8,9 @@
     "frontend"
   ],
   "scripts": {
+    "dev:frontend": "npm run dev -w @hackrice/frontend -- --port 3000",
+    "build:frontend": "npm run build -w @hackrice/frontend",
+    "test:frontend": "node --test frontend/test/*.test.mjs",
     "start": "node --env-file-if-exists=.env apps/api/dist/main.js",
     "build": "npm run build -w @hackrice/contracts && npm run build -w @hackrice/api",
     "test": "npm run build && node --test packages/contracts/test/*.test.mjs apps/api/test/*.test.mjs",

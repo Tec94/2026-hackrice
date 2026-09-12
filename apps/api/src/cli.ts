@@ -12,7 +12,7 @@ import { createBackboardProvider } from "./providers/backboard.js";
 
 const settings = await config();
 if (settings.local) await mkdir(dirname(settings.localPath), { recursive: true });
-const db = await connectDatabase({ url: settings.databaseURL, local: settings.local, localPath: settings.localPath });
+const db = await connectDatabase({ url: settings.databaseURL, local: settings.local, localPath: settings.localPath, allowUnverifiedTLS: settings.allowUnverifiedTLS });
 try {
   await migrate(db);
   const store = new Store(db);

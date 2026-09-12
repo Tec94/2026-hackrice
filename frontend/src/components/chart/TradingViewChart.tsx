@@ -14,6 +14,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { ChartCandle as Candle } from "@/adapters/chart";
+import { describeOffset, timeToOffset } from "@/adapters/chart";
 import { ReplayBoundary } from "./ReplayBoundary";
 import { ErrorBanner, Skeleton } from "@/components/ui";
 import { computeIndicator, indicatorDef } from "./indicators";
@@ -36,6 +37,7 @@ export interface ChartHandle {
   pushCandle: (candle: Candle) => void;
   setCandles: (candles: Candle[]) => void;
   resetView: () => void;
+  visibleCandles: () => Candle[];
 }
 
 export interface TradingViewChartProps {
@@ -232,6 +234,10 @@ export function TradingViewChart({
         chartRef.current?.timeScale().fitContent();
         redraw();
       },
+      visibleCandles() {
+        const range = chartRef.current?.timeScale().getVisibleRange();
+        return range ? dataRef.current.filter(c => c.time >= Number(range.from) && c.time <= Number(range.to)) : dataRef.current;
+      },
     }),
     [redraw, refreshIndicators],
   );
@@ -262,8 +268,9 @@ export function TradingViewChart({
         borderColor: "#262626",
         scaleMargins: { top: 0.08, bottom: 0.26 },
       },
-      timeScale: { borderColor: "#262626", timeVisible: true, secondsVisible: false },
-      localization: { priceFormatter: (p: number) => p.toFixed(2) },
+      timeScale: { borderColor: "#262626", timeVisible: true, secondsVisible: false,
+        tickMarkFormatter: (time: Time) => describeOffset(timeToOffset(Number(time))) },
+      localization: { priceFormatter: (p: number) => p.toFixed(2), timeFormatter: (time: Time) => describeOffset(timeToOffset(Number(time))) },
       autoSize: true,
     });
 
