@@ -10,6 +10,7 @@ import type * as C from "@hackrice/contracts";
 import { ReplayHeader } from "@/components/layout/ReplayHeader";
 import { Badge, Button, Card, ErrorBanner, Skeleton, Textarea } from "@/components/ui";
 import { request, isApiError } from "@/services/api-client";
+import { useCoachRating } from "@/hooks/useCoachRating";
 import { toChartCandles, type ChartCandle } from "@/adapters/chart";
 
 const TradingViewChart = dynamic(
@@ -39,6 +40,10 @@ export default function OutcomeRevealPage({
   const [reflection, setReflection] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [evaluation, setEvaluation] = useState<C.AnalysisEvaluation | null>(null);
+  // The outcome rating starts when the reveal is granted and lands a moment
+  // later, so wait for it briefly before offering to ask for it.
+  const coach = useCoachRating(sessionId, evaluation, { waitFor: "outcome_judgment", patience: 8 });
 
   /**
    * Reveal is a server-authorized transition. Once it succeeds the session's
@@ -61,6 +66,8 @@ export default function OutcomeRevealPage({
         },
       });
       setCandles(toChartCandles(bars.bars));
+      const history = await request("getHistory", { params: { sessionId } });
+      setEvaluation(history.evaluations[0] ?? null);
     } catch (e) {
       setError(
         isApiError(e, "state_conflict")
@@ -88,6 +95,10 @@ export default function OutcomeRevealPage({
   };
 
   const direction = reveal ? DIRECTION[reveal.observedDirection] : null;
+  const outcomeFindings = (coach.evaluation?.findings ?? []).filter(
+    (finding) => finding.reasonCode === "outcome_judgment" && finding.score !== null,
+  );
+  const outcomeNote = coach.evaluation?.coachNotes?.find((note) => note.stage === "reveal")?.text;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-ground">
@@ -167,6 +178,40 @@ export default function OutcomeRevealPage({
                   A wrong prediction does not mean weak reasoning, and a correct one does not prove
                   it was sound. Your reasoning score is unchanged by this outcome.
                 </p>
+              </Card>
+
+              <Card title="Coach on the outcome">
+                {coach.pending && (
+                  <p role="status" className="text-base text-ink-muted">
+                    The coach is comparing your call with what happened…
+                  </p>
+                )}
+                {!coach.pending && outcomeFindings.length > 0 && (
+                  <dl className="grid grid-cols-2 gap-3">
+                    {outcomeFindings.map((finding) => (
+                      <div key={finding.category}>
+                        <dt className="text-micro text-ink-faint">
+                          {finding.category === "confirmation" ? "Did the market agree" : "Was your confidence justified"}
+                        </dt>
+                        <dd className="nums mt-0.5 text-lead text-ink">{finding.score} / 100</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                {!coach.pending && outcomeFindings.length === 0 && (
+                  <p className="text-base text-ink-muted">The coach has not rated this outcome yet.</p>
+                )}
+                {outcomeNote && <p className="mt-3 text-base leading-relaxed text-ink">{outcomeNote}</p>}
+                {!coach.pending && (
+                  <div className="mt-3">
+                    <Button
+                      disabled={coach.rating}
+                      onClick={() => void coach.rateNow().catch(() => setError("The coach could not rate this outcome right now."))}
+                    >
+                      {coach.rating ? "Rating…" : outcomeFindings.length ? "Rate again" : "Rate against the outcome"}
+                    </Button>
+                  </div>
+                )}
               </Card>
 
               <Card title="Reflection">

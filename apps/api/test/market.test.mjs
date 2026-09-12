@@ -4,7 +4,7 @@ import { Decimal } from "decimal.js";
 import { SafeReply, renderSafeReply } from "@hackrice/contracts";
 import {
   MARKET_SOURCE, aggregateCandles, answerQuestion, candleDigest, evaluateSubmission,
-  applyRating, fetchBinanceCandles, indicatorSeries, normalizeBinanceKlines, parseQuestionIntent, toPublicCandles,
+  applyRating, describeChart, fetchBinanceCandles, indicatorSeries, normalizeBinanceKlines, parseQuestionIntent, toPublicCandles,
 } from "../dist/market.js";
 
 const minute = 60_000;
@@ -235,6 +235,8 @@ test("a coach rating scores judgement without touching computed evidence", () =>
       { category: "structure", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
       { category: "invalidation", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
       { category: "risk_reasoning", status: "insufficient_evidence", score: null, factIds: [], reasonCode: "missing_risk_reasoning" },
+      { category: "confirmation", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+      { category: "confidence_calibration", status: "not_assessable", score: null, factIds: [], reasonCode: "uncalibrated_rubric" },
     ],
   };
   const rated = applyRating(base, { thesisScore: 72, invalidationScore: 60, riskScore: 90 });
@@ -247,8 +249,34 @@ test("a coach rating scores judgement without touching computed evidence", () =>
   assert.equal(byCategory.structure.reasonCode, "model_judgment");
   // Nothing was written for risk, so there is nothing to judge.
   assert.equal(byCategory.risk_reasoning.score, null);
-  // The overall score describes only what was actually rated.
-  assert.equal(rated.overallScore, 66);
+  // The overall score is the rubric's weighting over what was actually rated:
+  // (20 * 72 + 15 * 60) / 35.
+  assert.equal(rated.overallScore, 67);
+  assert.equal(rated.coachNotes, undefined, "no comment, no note");
+
+  // After the reveal the coach scores only the call against the outcome.
+  const outcome = applyRating(rated, { confirmationScore: 40, calibrationScore: 20, comment: "Right idea, too sure." }, "reveal");
+  const after = Object.fromEntries(outcome.findings.map((finding) => [finding.category, finding]));
+  assert.equal(after.confirmation.score, 40);
+  assert.equal(after.confirmation.reasonCode, "outcome_judgment");
+  assert.equal(after.confidence_calibration.score, 20);
+  assert.equal(after.structure.score, 72, "the outcome does not re-score the reasoning");
+  assert.equal(after.evidence.score, null);
+  // (20*72 + 15*60 + 15*40 + 10*20) / 60
+  assert.equal(outcome.overallScore, 52);
+  assert.deepEqual(outcome.coachNotes, [{ stage: "reveal", text: "Right idea, too sure." }]);
+  // A second rating of the same stage replaces its note rather than stacking them.
+  const again = applyRating({ ...outcome, status: "processing" }, { confirmationScore: 45, comment: "Closer." }, "reveal");
+  assert.deepEqual(again.coachNotes, [{ stage: "reveal", text: "Closer." }]);
+  assert.equal(again.status, "completed");
+});
+
+test("a rating brief is written by the calculator and leaves out what it cannot compute", () => {
+  const facts = describeChart({ snapshot, candles: bars(12), cutoffTimeMs: hour, decimalPolicy: policy });
+  assert.ok(facts.includes("Closing price: 111 USDT."));
+  assert.ok(facts.includes("Visible high: 112 USDT."));
+  // Twelve bars cannot seed a 21-period EMA or a 14-period RSI; neither is invented.
+  assert.equal(facts.some((fact) => /average|strength index/i.test(fact)), false);
 });
 
 test("widened phrasing still refuses advice, future, and news questions", () => {

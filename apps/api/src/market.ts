@@ -3,7 +3,7 @@ import { Decimal } from "decimal.js";
 import { z } from "zod";
 import {
   AnalysisRating, Candle, ChartSnapshot, Evaluation, Fact, Indicator, SafeReply, Submission,
-  Timeframe, timeframeMinutes, type ChartContext, type AnalysisSubmission,
+  Timeframe, renderSafeReply, rubricWeights, timeframeMinutes, type ChartContext, type AnalysisSubmission, type CoachRatingStage,
 } from "@hackrice/contracts";
 
 export const MARKET_SOURCE = "binance:spot:SOLUSDT:5m" as const;
@@ -455,33 +455,69 @@ export function evaluateSubmission(input: CalculationInput & {
   }), facts };
 }
 
+/** Where each score lands. Evidence is deliberately absent from both. */
+const RATED_CATEGORIES: Record<CoachRatingStage, Partial<Record<keyof z.infer<typeof AnalysisRating>, z.infer<typeof Evaluation>["findings"][number]["category"]>>> = {
+  submission: { thesisScore: "structure", invalidationScore: "invalidation", riskScore: "risk_reasoning" },
+  reveal: { confirmationScore: "confirmation", calibrationScore: "confidence_calibration" },
+};
+
 /**
  * Adds the coach's scores to the categories the evaluator left unrated.
  *
  * Evidence findings are computed from candles and are never touched: a model
- * opinion cannot overturn a comparison that either held or did not. The
- * overall score averages only what the model actually rated, so it describes
- * the judged part of the analysis rather than the whole of it.
+ * opinion cannot overturn a comparison that either held or did not. Before
+ * the reveal the coach scores the reasoning; after it, only how the call
+ * compared with the outcome, so a right guess never retroactively improves
+ * weak reasoning. The overall score is the rubric's weighting over whatever
+ * has actually been rated, so it describes the judged part of the analysis
+ * rather than averaging in blanks.
  */
 export function applyRating(
   evaluation: z.infer<typeof Evaluation>,
   rating: z.infer<typeof AnalysisRating>,
+  stage: CoachRatingStage = "submission",
 ): z.infer<typeof Evaluation> {
-  const scores: Record<string, number | undefined> = {
-    structure: rating.thesisScore,
-    invalidation: rating.invalidationScore,
-    risk_reasoning: rating.riskScore,
-  };
+  const scores = new Map<string, number>();
+  for (const [field, category] of Object.entries(RATED_CATEGORIES[stage])) {
+    const score = rating[field as keyof typeof rating];
+    if (typeof score === "number" && category) scores.set(category, score);
+  }
+  const reasonCode = stage === "reveal" ? "outcome_judgment" as const : "model_judgment" as const;
   const findings = evaluation.findings.map((finding) => {
-    const score = scores[finding.category];
-    // Only categories the evaluator declined to judge can be rated, and only
-    // where the learner actually wrote something to judge.
+    const score = scores.get(finding.category);
+    // Evidence is measured, not judged, and a blank field has nothing to judge.
     if (score === undefined || finding.category === "evidence" || finding.status !== "not_assessable") return finding;
-    return { ...finding, score, reasonCode: "model_judgment" as const };
+    return { ...finding, score, reasonCode };
   });
-  const rated = findings.filter((finding) => finding.score !== null && finding.score !== undefined);
-  const overallScore = rated.length
-    ? Math.round(rated.reduce((total, finding) => total + (finding.score ?? 0), 0) / rated.length)
+  const rated = findings.flatMap((finding) => typeof finding.score === "number" ? [{ category: finding.category, score: finding.score }] : []);
+  const weight = rated.reduce((total, finding) => total + rubricWeights[finding.category], 0);
+  const overallScore = weight
+    ? Math.round(rated.reduce((total, finding) => total + finding.score * rubricWeights[finding.category], 0) / weight)
     : null;
-  return Evaluation.parse({ ...evaluation, findings, overallScore });
+  const coachNotes = (evaluation.coachNotes ?? []).filter((note) => note.stage !== stage);
+  if (rating.comment) coachNotes.push({ stage, text: rating.comment });
+  return Evaluation.parse({ ...evaluation, status: "completed", findings, overallScore, ...(coachNotes.length ? { coachNotes } : {}) });
+}
+
+/**
+ * The chart as the learner saw it, in the calculator's own words.
+ *
+ * A rating brief is built from these lines rather than from raw candles, so
+ * the only numbers a model ever reads are ones this server computed from the
+ * visible range. A metric the snapshot cannot supply is left out, never
+ * estimated.
+ */
+export function describeChart(input: CalculationInput): string[] {
+  const questions = [
+    "what is the opening price", "what is the closing price", "what is the high", "what is the low",
+    "volume", "percent change", "visible high", "visible low", "ema 21", "rsi 14",
+  ];
+  const facts: string[] = [];
+  for (const text of questions) {
+    try {
+      const reply = answerQuestion({ ...input, text });
+      if (reply.kind === "calculation") facts.push(renderSafeReply(reply));
+    } catch { /* Left out rather than guessed. */ }
+  }
+  return facts;
 }

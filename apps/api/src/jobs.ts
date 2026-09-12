@@ -3,7 +3,10 @@ import { ReplayService } from "./service.js";
 import { Recordings } from "./recordings.js";
 import { createSolanaReceiptProvider, type SolanaReceiptProvider } from "./providers/solana.js";
 import { createBackboardProvider, type MemoryLink, type MemoryOwner, type LearningRecord } from "./providers/backboard.js";
-import type { State } from "./domain.js";
+import { appendEvent, type State } from "./domain.js";
+import { applyRating, describeChart } from "./market.js";
+import { createAnalysisRater, type AnalysisRater } from "./providers/rater.js";
+import type { CoachRatingStage } from "@hackrice/contracts";
 
 type Backboard = ReturnType<typeof createBackboardProvider>;
 type MemoryState = { owner: MemoryOwner; links: MemoryLink[]; records: LearningRecord[]; writeStarted?: boolean; writeCount?: number };
@@ -16,7 +19,8 @@ export class Jobs {
   constructor(public service: ReplayService, private recordings: Recordings,
     public solana: SolanaReceiptProvider = createSolanaReceiptProvider(),
     public backboard: Backboard = createBackboardProvider({}),
-    private cancelSession: (id: string) => void = () => {}) {}
+    private cancelSession: (id: string) => void = () => {},
+    public rater: AnalysisRater = createAnalysisRater({})) {}
 
   async serial<T>(userId: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.locks.get(userId) ?? Promise.resolve();
@@ -36,6 +40,68 @@ export class Jobs {
       const receipt = await this.solana.submit(state.commitment.hash, persist, state.receipt);
       if (receipt.signature && receipt.status !== "confirmed" && receipt.status !== "failed") await this.solana.confirm(receipt, persist);
     });
+  }
+
+  /** Marks the latest evaluation as awaiting the coach, so a page loading right after submit knows to wait. */
+  async markRating(userId: string, sessionId: string) {
+    if (!this.rater.enabled) return;
+    await this.service.store.update(userId, sessionId, (state) => {
+      const evaluation = state.evaluations.at(-1);
+      if (evaluation) evaluation.status = "processing";
+    });
+  }
+
+  /**
+   * Has the coach rate the latest evaluation for one stage.
+   *
+   * Runs after submission, after reveal, and again on request. The outcome
+   * stage is skipped once rated unless forced, because the reveal page asks
+   * for the reveal on every load. Whatever happens, the `processing`
+   * placeholder is cleared, so a page never waits on a rating that will not
+   * come.
+   */
+  async rate(userId: string, sessionId: string, stage: CoachRatingStage, force = false) {
+    return this.serial(userId, async () => {
+      const state = await this.service.store.read(userId, sessionId);
+      const evaluation = state.evaluations.at(-1);
+      const recorded = state.submissions.at(-1);
+      if (!evaluation || !recorded) return evaluation ?? null;
+      const revealed = state.events.find((event) => event.type === "session.revealed");
+      const outcome = revealed?.type === "session.revealed" ? revealed.result : undefined;
+      const marker = stage === "reveal" ? "outcome_judgment" : "model_judgment";
+      const alreadyRated = evaluation.findings.some((finding) => finding.reasonCode === marker);
+      const settle = (next: State["evaluations"][number]) => this.service.store.update(userId, sessionId, (s) => {
+        s.evaluations[s.evaluations.length - 1] = next;
+        appendEvent(s, { type: "evaluation.updated", evaluation: next });
+        return next;
+      });
+      if (!this.rater.enabled || (stage === "reveal" && !outcome) || (alreadyRated && !force)) {
+        return evaluation.status === "processing" ? settle({ ...evaluation, status: "completed" }) : evaluation;
+      }
+      if (evaluation.status !== "processing") await this.markRating(userId, sessionId);
+      const snapshot = state.snapshots.find((s) => s.id === recorded.submission.chartSnapshotId) ?? state.snapshots.at(-1);
+      const chart = snapshot ? describeChart({
+        snapshot, candles: await this.service.store.candles(state.datasetId),
+        cutoffTimeMs: state.cutoffTimeMs, decimalPolicy: state.policy,
+      }) : [];
+      const rating = await this.rater.rate({
+        stage, submission: recorded.submission, chart,
+        ...(stage === "reveal" && outcome ? { outcome: {
+          referenceClose: outcome.referenceClose, horizonClose: outcome.horizonClose,
+          percentChange: outcome.percentChange, observedDirection: outcome.observedDirection,
+        } } : {}),
+      });
+      const current = (await this.service.store.read(userId, sessionId)).evaluations.at(-1) ?? evaluation;
+      return settle(rating ? applyRating(current, rating, stage) : { ...current, status: "completed" });
+    });
+  }
+
+  /** A rating interrupted by a restart left its placeholder; finish or clear it rather than let a page wait forever. */
+  private async recoverRating(userId: string, sessionId: string) {
+    const state = await this.service.store.read(userId, sessionId).catch(() => null);
+    if (state?.evaluations.at(-1)?.status !== "processing") return;
+    const revealed = state.events.some((event) => event.type === "session.revealed");
+    await this.rate(userId, sessionId, revealed ? "reveal" : "submission", true).catch(() => {});
   }
 
   private async owner(userId: string): Promise<MemoryOwner | undefined> {
@@ -194,6 +260,8 @@ export class Jobs {
       else {
         await this.receipt(row.user_id, row.id);
         await this.syncLearning(row.user_id, row.id);
+        // Not awaited: a slow model must not hold up listening.
+        void this.recoverRating(row.user_id, row.id);
       }
     }
     const deletions = (await db.query("SELECT id,user_id FROM deletions WHERE public->>'status'='pending'")).rows;

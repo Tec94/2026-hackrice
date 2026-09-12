@@ -13,10 +13,11 @@ import { ApiFailure, fail, type State } from "./domain.js";
 import type { VoiceConfig } from "./providers/voice.js";
 import type { SolanaReceiptProvider } from "./providers/solana.js";
 import type { createBackboardProvider } from "./providers/backboard.js";
+import type { AnalysisRater } from "./providers/rater.js";
 
 export type AppOptions = { db: Database; service?: ReplayService; recordingsDirectory: string; baseURL: string;
   authSecret: string; voiceConfig?: VoiceConfig; solanaProvider?: SolanaReceiptProvider;
-  backboardProvider?: ReturnType<typeof createBackboardProvider>; now?: () => number };
+  backboardProvider?: ReturnType<typeof createBackboardProvider>; rater?: AnalysisRater; now?: () => number };
 
 declare module "fastify" {
   interface FastifyInstance { replayService: ReplayService; jobs: Jobs; realtime: Realtime }
@@ -38,7 +39,7 @@ export async function buildApp(options: AppOptions) {
   const recordings = new Recordings(options.recordingsDirectory);
   // 16kHz linear PCM is Deepgram's documented default sample rate, explicitly negotiated in each session.
   const realtime = new Realtime(service, recordings, { encoding: "pcm_s16le", sampleRateHz: 16000, channels: 1 }, options.voiceConfig);
-  const jobs = new Jobs(service, recordings, options.solanaProvider, options.backboardProvider, (id) => realtime.cancelSession(id));
+  const jobs = new Jobs(service, recordings, options.solanaProvider, options.backboardProvider, (id) => realtime.cancelSession(id), options.rater);
   const origin = new URL(options.baseURL).origin;
   const users = new WeakMap<FastifyRequest, string>();
   const user = (request: FastifyRequest) => users.get(request) ?? fail("unauthenticated", 401);
@@ -114,6 +115,10 @@ export async function buildApp(options: AppOptions) {
     await changed(r);
     // Receipt/memory work is durable and explicitly refreshable; no timer polling or hidden retry budget.
     void jobs.receipt(user(r), sid(r)).then(() => jobs.syncLearning(user(r), sid(r))).catch(() => {});
+    // The coach's rating is likewise durable and refreshable. The placeholder is
+    // set before responding so the feedback page knows to wait for it.
+    await jobs.markRating(user(r), sid(r));
+    void jobs.rate(user(r), sid(r), "submission").then(() => changed(r)).catch(() => {});
     reply.code(201); return result;
   });
   app.get("/api/evaluations/:evaluationId", async (r) => {
@@ -132,7 +137,16 @@ export async function buildApp(options: AppOptions) {
   app.post("/api/sessions/:sessionId/learning", async (r) => C.Learning.parse(await jobs.learning(user(r), sid(r))));
   app.post("/api/sessions/:sessionId/reveal", async (r) => {
     const result = await service.reveal(user(r), sid(r), key(r));
-    realtime.cancelSession(sid(r)); await changed(r); return result;
+    realtime.cancelSession(sid(r)); await changed(r);
+    void jobs.rate(user(r), sid(r), "reveal").then(() => changed(r)).catch(() => {});
+    return result;
+  });
+  app.post("/api/sessions/:sessionId/rating", async (r) => {
+    const revealed = (await service.store.read(user(r), sid(r))).events.some((event) => event.type === "session.revealed");
+    const evaluation = await jobs.rate(user(r), sid(r), revealed ? "reveal" : "submission", true);
+    if (!evaluation) return fail("state_conflict", 409);
+    await changed(r);
+    return C.Evaluation.parse(evaluation);
   });
   app.put("/api/sessions/:sessionId/reflection", (r) => service.transition(user(r), sid(r), key(r), "reflection", C.Reflection.parse(r.body)));
   app.post("/api/sessions/:sessionId/complete", (r) => service.transition(user(r), sid(r), key(r), "complete", {}));

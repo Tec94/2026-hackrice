@@ -5,6 +5,7 @@ import { connectDatabase, migrate } from "./database.js";
 import { buildApp } from "./server.js";
 import { createSolanaReceiptProvider } from "./providers/solana.js";
 import { createBackboardProvider } from "./providers/backboard.js";
+import { createAnalysisRater } from "./providers/rater.js";
 
 const settings = await config();
 if (settings.local) await mkdir(dirname(settings.localPath), { recursive: true });
@@ -12,7 +13,8 @@ const db = await connectDatabase({ url: settings.databaseURL, local: settings.lo
 await migrate(db);
 const app = await buildApp({ db, recordingsDirectory: settings.recordingsDirectory, baseURL: settings.baseURL,
   authSecret: settings.authSecret, voiceConfig: settings.voice,
-  solanaProvider: createSolanaReceiptProvider(settings.solana), backboardProvider: createBackboardProvider({ apiKey: settings.backboardApiKey }) });
+  solanaProvider: createSolanaReceiptProvider(settings.solana), backboardProvider: createBackboardProvider({ apiKey: settings.backboardApiKey }),
+  rater: createAnalysisRater({ deepgramApiKey: settings.voice?.deepgramApiKey, model: settings.voice?.conversationModel }) });
 await app.jobs.run();
 const address = await app.listen({ host: settings.host, port: settings.port });
 console.log(`Chart coach API listening at ${address} (${db.mode}).`);

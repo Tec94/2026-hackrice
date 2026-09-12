@@ -63,6 +63,7 @@ const NO_IDEMPOTENCY: ReadonlySet<Operation> = new Set([
   "deleteSession",
   "refreshReceipt",
   "getLearning",
+  "rateAnalysis",
 ]);
 
 function fillPath(path: string, params: Record<string, string> = {}): string {

@@ -9,6 +9,7 @@ import { ReplayHeader } from "@/components/layout/ReplayHeader";
 import { FeedbackPanel } from "@/components/feedback/FeedbackPanel";
 import { Button, Card, ErrorBanner, Skeleton } from "@/components/ui";
 import { request, isApiError } from "@/services/api-client";
+import { useCoachRating } from "@/hooks/useCoachRating";
 import { toChartCandles, type ChartCandle } from "@/adapters/chart";
 
 const TradingViewChart = dynamic(() => import("@/components/chart/TradingViewChart").then(m => m.TradingViewChart), { ssr: false });
@@ -34,17 +35,19 @@ export default function AnalysisFeedbackPage({ params }: { params: Promise<{ ses
     finally { setBusy(false); }
   }, [sessionId, router]);
   useEffect(() => { void load(); }, [load]);
-  const evaluation = history?.evaluations[0];
+  const coach = useCoachRating(sessionId, history?.evaluations[0] ?? null);
+  const evaluation = coach.evaluation;
   return <div className="flex h-dvh flex-col overflow-hidden bg-ground">
     <ReplayHeader symbol={history?.session.symbol} timeframe={history?.session.timeframe} phase="feedback" />
-    <header className="bg-panel px-4 py-3"><h1 className="text-lead font-semibold text-ink">Analysis feedback</h1><p className="text-tiny text-ink-muted">{evaluation?.overallScore == null ? "Uncalibrated rubric — no overall score" : `${evaluation.overallScore} / 100`}</p></header>
+    <header className="bg-panel px-4 py-3"><h1 className="text-lead font-semibold text-ink">Analysis feedback</h1><p className="text-tiny text-ink-muted">{coach.pending ? "Coach is rating your reasoning…" : evaluation?.overallScore == null ? "No overall score yet" : `${evaluation.overallScore} / 100`}</p></header>
     <main className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-workspace">
       <section className="min-h-[35vh] flex-1" aria-label="Chart at submission">{candles.length ? <TradingViewChart initialCandles={candles} /> : <Skeleton className="h-full w-full" />}</section>
       <aside className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {error && <ErrorBanner title="Feedback unavailable" message={error} onRetry={load} />}
         {busy && !history && <p role="status">Loading feedback…</p>}
         {history && !history.submissions.length && <Card title="No analysis submitted"><p>Return to the chart and submit your analysis first.</p></Card>}
-        {evaluation && <FeedbackPanel evaluation={evaluation} />}
+        {evaluation && <FeedbackPanel evaluation={evaluation} pending={coach.pending} rating={coach.rating}
+          onRate={() => void coach.rateNow().catch(() => setError("The coach could not rate this analysis right now."))} />}
         {evaluation && <Card title="Backboard learning memory">
           <p className="text-tiny text-ink-muted">Retrieve saved learning categories and evidence-check reasons. These are not trading recommendations.</p>
           <Button disabled={learningBusy} onClick={async () => {

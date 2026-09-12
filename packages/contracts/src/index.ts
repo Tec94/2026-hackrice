@@ -127,10 +127,14 @@ export const SubmissionDraft = z.strictObject({
  * Scores are a model's opinion, kept apart from the computed findings and
  * never allowed to change whether an evidence claim held up.
  */
+/** Before the reveal the coach rates reasoning; after it, the call against the outcome. */
+export const RatingStage = z.enum(["submission", "reveal"]);
 export const AnalysisRating = z.strictObject({
   thesisScore: Percentage.optional(),
   invalidationScore: Percentage.optional(),
   riskScore: Percentage.optional(),
+  confirmationScore: Percentage.optional(),
+  calibrationScore: Percentage.optional(),
   comment: Text.optional(),
 });
 
@@ -157,7 +161,7 @@ export const EvaluationFinding = z.strictObject({
   reasonCode: z.enum([
     "claim_supported", "claim_contradicted", "missing_comparison", "missing_invalidation",
     "missing_risk_reasoning", "insufficient_data", "subjective_judgment", "uncalibrated_rubric",
-    "model_judgment",
+    "model_judgment", "outcome_judgment",
   ]),
 });
 export const Evaluation = z.strictObject({
@@ -169,6 +173,8 @@ export const Evaluation = z.strictObject({
   overallScore: Percentage.nullable(),
   findings: z.array(EvaluationFinding),
   scoreMeaning: z.literal("educational_rubric_not_validated_prediction_probability"),
+  /** The coach's sentence for each stage it has rated, kept apart from the findings. */
+  coachNotes: z.array(z.strictObject({ stage: RatingStage, text: Text })).optional(),
 });
 export const Metric = z.enum([
   "open", "high", "low", "close", "volume", "price_change", "percent_change",
@@ -332,6 +338,7 @@ export const httpContracts = {
   askQuestion: { method: "POST", path: "/api/sessions/:sessionId/questions", body: Question, response: AcceptedQuestion },
   submitAnalysis: { method: "POST", path: "/api/sessions/:sessionId/submissions", body: Submission, response: RecordedSubmission },
   getEvaluation: { method: "GET", path: "/api/evaluations/:evaluationId", response: Evaluation },
+  rateAnalysis: { method: "POST", path: "/api/sessions/:sessionId/rating", response: Evaluation },
   reveal: { method: "POST", path: "/api/sessions/:sessionId/reveal", response: Reveal },
   reflect: { method: "PUT", path: "/api/sessions/:sessionId/reflection", body: Reflection, response: Reflection },
   complete: { method: "POST", path: "/api/sessions/:sessionId/complete", response: PublicSession },
@@ -350,6 +357,7 @@ export type AnalysisSubmission = z.infer<typeof Submission>;
 export type AnalysisDraft = z.infer<typeof SubmissionDraft>;
 export type AnalysisEvaluation = z.infer<typeof Evaluation>;
 export type AnalysisCoachRating = z.infer<typeof AnalysisRating>;
+export type CoachRatingStage = z.infer<typeof RatingStage>;
 export type ClientMessage = z.infer<typeof ClientEvent>;
 export type ServerMessage = z.infer<typeof ServerEvent>;
 export type HttpOperation = keyof typeof httpContracts;

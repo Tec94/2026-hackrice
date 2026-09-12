@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createVoiceProvider } from "../dist/providers/voice.js";
+import { createAnalysisRater, ratingBrief } from "../dist/providers/rater.js";
 import { createBackboardProvider } from "../dist/providers/backboard.js";
 import { renderSafeReply } from "@hackrice/contracts";
 
@@ -203,4 +204,101 @@ test("ambiguous, unavailable, and cross-user memory deletions cannot report comp
   assert.equal((await pending.deleteLinked(owner, [{ ...link, memoryIds: [], threadIds: [], status: "stored" }])).status, "pending");
   const rejected = createBackboardProvider({ apiKey: "test-key", fetch: async () => reply(403) });
   assert.equal((await rejected.retrieve(owner)).status, "failed");
+});
+
+
+const analysis = {
+  chartSnapshotId: snapshotId, thesis: "Higher lows are holding", prediction: "higher", hypotheticalAction: "long",
+  confidencePercent: 70, claimedEvidence: ["close > 137"], invalidation: "a close below 135",
+};
+const chart = ["Closing price: 137.42 USDT.", "Visible high: 138.84 USDT."];
+const outcome = { referenceClose: "137.42", horizonClose: "140.10", percentChange: "1.95", observedDirection: "higher" };
+
+function raterHarness(overrides = {}) {
+  const socket = new FakeSocket();
+  let opened = 0;
+  const rater = createAnalysisRater({ deepgramApiKey: "test-deepgram", model: "test-model",
+    socketFactory: () => { opened++; return socket; }, ...overrides });
+  return { rater, socket, opened: () => opened };
+}
+
+test("an unconfigured rater is disabled and never opens a connection", async () => {
+  let opened = 0;
+  const rater = createAnalysisRater({ deepgramApiKey: "test-deepgram", socketFactory: () => { opened++; return new FakeSocket(); } });
+  assert.equal(rater.enabled, false);
+  assert.equal(await rater.rate({ stage: "submission", submission: analysis, chart }), null);
+  assert.equal(opened, 0);
+});
+
+test("a submission rating is a text-only agent session whose one function call is the rating", async () => {
+  const h = raterHarness();
+  const pending = h.rater.rate({ stage: "submission", submission: analysis, chart });
+  h.socket.json({ type: "Welcome" });
+  const settings = JSON.parse(h.socket.sent[0]);
+  assert.equal(settings.mip_opt_out, true);
+  assert.deepEqual(settings.flags, { history: false });
+  assert.equal(settings.agent.think.provider.model, "test-model");
+  assert.equal("endpoint" in settings.agent.think, false, "the hosted model is used directly");
+  assert.deepEqual(settings.agent.think.functions.map((f) => f.name), ["rate_analysis"]);
+  // Every field the stage rates is required, so the model cannot quietly skip one.
+  assert.deepEqual(settings.agent.think.functions[0].parameters.required, ["thesisScore", "invalidationScore", "riskScore", "comment"]);
+  assert.equal("confirmationScore" in settings.agent.think.functions[0].parameters.properties, false);
+  assert.equal(settings.agent.speak.provider.type, "deepgram");
+
+  h.socket.json({ type: "SettingsApplied" });
+  const injected = JSON.parse(h.socket.sent[1]);
+  assert.equal(injected.type, "InjectUserMessage");
+  assert.ok(injected.content.includes("Higher lows are holding"));
+  assert.ok(injected.content.includes("Closing price: 137.42 USDT."));
+  assert.equal(injected.content.includes("What the price then did"), false, "no outcome before the reveal");
+
+  // Speech frames arrive on the same socket and are ignored.
+  h.socket.emit("message", Buffer.from([0, 0, 0, 0]), true);
+  h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "call-1", name: "rate_analysis",
+    arguments: JSON.stringify({ thesisScore: 72.4, invalidationScore: 60, riskScore: 55, confirmationScore: 99, comment: "  Name the level.  " }) }] });
+  assert.deepEqual(await pending, { thesisScore: 72, invalidationScore: 60, riskScore: 55, comment: "Name the level." });
+  const response = JSON.parse(h.socket.sent.at(-1));
+  assert.equal(response.type, "FunctionCallResponse");
+  assert.equal(response.id, "call-1");
+  assert.equal(h.socket.readyState, 3, "the session is closed once the rating is in");
+  assert.equal(h.opened(), 1);
+});
+
+test("a reveal rating carries the outcome and keeps only outcome scores, clamped to the rubric", async () => {
+  const h = raterHarness();
+  const pending = h.rater.rate({ stage: "reveal", submission: analysis, chart, outcome });
+  h.socket.json({ type: "Welcome" });
+  h.socket.json({ type: "SettingsApplied" });
+  const injected = JSON.parse(h.socket.sent[1]);
+  assert.ok(injected.content.includes("What the price then did"));
+  assert.ok(injected.content.includes("Direction: higher"));
+  h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "call-2", name: "rate_analysis",
+    arguments: JSON.stringify({ confirmationScore: 130, calibrationScore: -5, thesisScore: 10, comment: "Right call." }) }] });
+  assert.deepEqual(await pending, { confirmationScore: 100, calibrationScore: 0, comment: "Right call." });
+});
+
+test("a rater failure is null, never an exception, and never a partial rating", async () => {
+  const errored = raterHarness();
+  const failing = errored.rater.rate({ stage: "submission", submission: analysis, chart });
+  errored.socket.json({ type: "Welcome" });
+  errored.socket.json({ type: "Error", code: "FAILED_TO_THINK" });
+  assert.equal(await failing, null);
+
+  const garbled = raterHarness();
+  const unusable = garbled.rater.rate({ stage: "submission", submission: analysis, chart });
+  garbled.socket.json({ type: "Welcome" });
+  garbled.socket.json({ type: "SettingsApplied" });
+  garbled.socket.json({ type: "FunctionCallRequest", functions: [{ id: "call-3", name: "rate_analysis", arguments: "{not json" }] });
+  assert.equal(await unusable, null);
+  assert.equal(JSON.parse(garbled.socket.sent.at(-1)).type, "FunctionCallResponse", "the model is still answered");
+
+  const silent = raterHarness({ timeoutMs: 5 });
+  assert.equal(await silent.rater.rate({ stage: "submission", submission: analysis, chart }), null);
+});
+
+test("the brief is plain lines with every field the learner wrote and placeholders for the rest", () => {
+  const text = ratingBrief({ stage: "submission", submission: { ...analysis, invalidation: undefined }, chart: [] });
+  assert.ok(text.includes("- (none available)"));
+  assert.ok(text.includes("- Invalidation: (none written)"));
+  assert.ok(text.includes("- Confidence: 70%"));
 });
