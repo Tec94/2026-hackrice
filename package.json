@@ -1,0 +1,10 @@
+{
+  "name": "hackrice-chart-coach",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run build && node --test packages/contracts/test/*.test.mjs"
+  }
+}
