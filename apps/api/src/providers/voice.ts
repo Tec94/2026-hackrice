@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import WebSocket, { type RawData } from "ws";
 import { z } from "zod";
-import { AnalysisRating, AudioFormat, Id, SafeReply, SubmissionDraft, renderSafeReply } from "@hackrice/contracts";
+import { AnalysisRating, AudioFormat, Id, SafeReply, SubmissionDraft, renderSafeReply, type AnalysisDraft } from "@hackrice/contracts";
 
 export type VoiceBinding = { userId: string; sessionId: string; turnId: string; chartSnapshotId: string };
 export type VoiceConfig = {
@@ -56,9 +56,15 @@ export type VoiceRelay = {
   cancel(): void;
 };
 export type ThinkResponse = { statusCode: number; contentType: string; body: string };
+/** What the previous turns left behind, for the model to pick the thread up. */
+export type TurnContext = {
+  turns: { learner: string; coach?: string }[];
+  draft?: AnalysisDraft;
+};
 type Options = {
   config?: VoiceConfig;
   answer(binding: VoiceBinding, text: string): Promise<unknown>;
+  context?(binding: VoiceBinding): Promise<TurnContext | undefined>;
   isTurnActive(binding: VoiceBinding): Promise<boolean>;
   onEvent(binding: VoiceBinding, event: VoiceProviderEvent): void | Promise<void>;
   socketFactory?: (url: string, options: { headers: Record<string, string> }) => WebSocket;
@@ -66,8 +72,71 @@ type Options = {
 type ActiveTurn = {
   binding: VoiceBinding; token: string; model: string; socket: WebSocket; format: Format;
   active: boolean; ready: boolean; inputStopped: boolean; approved: boolean; audioStarted: boolean;
+  /** How the turn earned the right to speak; speech-approved turns stay under number checks. */
+  approvedBy?: "function" | "speech";
+  /** Audio that arrived before the sentence it belongs to was approved. */
+  heldAudio: Buffer[];
+  /** Numbers the learner said or wrote; the only ones a conversational reply may repeat. */
+  allowed: Set<string>;
+  spoken: string[];
   resolveReady(value: boolean): void;
 };
+/** About ten seconds at Deepgram's 30 ms frames: longer than any sentence the text could lag. */
+const HELD_AUDIO_LIMIT = 400;
+
+/** Every number in a piece of text, normalised so "137.40" and "137.4" compare equal. */
+export function numbersIn(text: string): string[] {
+  return Array.from(text.replace(/(\d),(?=\d{3}\b)/g, "$1").matchAll(/\d+(?:\.\d+)?/g), (match) => String(Number(match[0])));
+}
+
+/** Coach lines carry chart values; masked, they still tell the model what was discussed. */
+export function maskNumbers(text: string): string {
+  return text.replace(/\d[\d,]*(?:\.\d+)?/g, "[value]");
+}
+
+const DRAFT_LABEL: Record<keyof AnalysisDraft, string> = {
+  thesis: "Thesis", prediction: "Prediction", hypotheticalAction: "Hypothetical action",
+  confidencePercent: "Confidence (%)", claimedEvidence: "Evidence", invalidation: "Invalidation", riskReasoning: "Risk reasoning",
+};
+
+function draftLines(draft: AnalysisDraft | undefined): string[] {
+  if (!draft) return ["(nothing recorded yet)"];
+  const lines = (Object.keys(DRAFT_LABEL) as (keyof AnalysisDraft)[]).flatMap((key) => {
+    const value = draft[key];
+    if (value === undefined) return [];
+    return [`- ${DRAFT_LABEL[key]}: ${Array.isArray(value) ? value.join("; ") : String(value)}`];
+  });
+  return lines.length ? lines : ["(nothing recorded yet)"];
+}
+
+/** The standing instructions plus everything this session has already said and recorded. */
+export function coachPrompt(context: TurnContext | undefined): string {
+  const turns = context?.turns ?? [];
+  const conversation = turns.length
+    ? turns.flatMap((turn) => [`Learner: ${turn.learner}`, ...(turn.coach ? [`Coach: ${maskNumbers(turn.coach)}`] : [])])
+    : ["(this is the first thing the learner has said)"];
+  return [
+    COACH_PROMPT,
+    "",
+    "Conversation so far, oldest first. Chart values in it are masked; if the learner asks about one again, call get_chart_metric again.",
+    ...conversation,
+    "",
+    "The analysis form so far:",
+    ...draftLines(context?.draft),
+    "",
+    "Use the conversation above to resolve follow-ups such as \"and the volume?\" or \"what about the low?\".",
+    "If the learner revises something already on the form, call record_analysis with only the fields that changed.",
+    "If they ask what you have so far, read the form back in one or two sentences.",
+    "Anything not on the form and not a chart value, answer briefly in your own words without inventing numbers.",
+  ].join("\n");
+}
+
+/** Numbers the learner has stated, from the context the model is given. */
+function contextNumbers(context: TurnContext | undefined): string[] {
+  if (!context) return [];
+  const learner = context.turns.map((turn) => turn.learner).join(" ");
+  return numbersIn(`${learner} ${draftLines(context.draft).join(" ")}`);
+}
 const bindingSchema = z.strictObject({ userId: z.string().min(1), sessionId: Id, turnId: Id, chartSnapshotId: Id });
 const providerEndpoint = "wss://agent.deepgram.com/v1/agent/converse";
 const unsupported = { kind: "refusal", reason: "unsupported" } as const;
@@ -92,6 +161,43 @@ export function createVoiceProvider(options: Options) {
     turn.socket.close();
   }
 
+  const conversational = !!config?.conversationModel;
+
+  async function deliver(turn: ActiveTurn, bytes: Buffer) {
+    if (!turn.audioStarted) {
+      await options.onEvent(turn.binding, { type: "audio_start", format: turn.format });
+      turn.audioStarted = true;
+    }
+    if (turn.active) await options.onEvent(turn.binding, { type: "audio", pcm: bytes });
+  }
+
+  /** Lets the turn speak, and releases any audio that arrived ahead of its approval. */
+  async function approve(turn: ActiveTurn, by: "function" | "speech") {
+    if (!turn.approved) turn.approvedBy = by;
+    turn.approved = true;
+    const held = turn.heldAudio.splice(0);
+    for (const bytes of held) { if (!turn.active) return; await deliver(turn, bytes); }
+  }
+
+  /**
+   * Approves a conversational sentence, or stops one that speaks a number
+   * nobody gave it. A turn approved by a function call spoke a value this
+   * server computed and is trusted to repeat it; a turn that only talked may
+   * use the learner's own numbers and no others.
+   */
+  async function heard(turn: ActiveTurn, role: string | undefined, content: string) {
+    if (role === "user") { for (const value of numbersIn(content)) turn.allowed.add(value); return; }
+    const sentence = content.trim();
+    if (role !== "assistant" || !sentence) return;
+    turn.spoken.push(sentence);
+    if (turn.approvedBy === "function") return;
+    if (!numbersIn(sentence).every((value) => turn.allowed.has(value))) { await fail(turn); return; }
+    if (!turn.approved) {
+      await options.onEvent(turn.binding, { type: "response", reply: { kind: "conversation", text: sentence } });
+      await approve(turn, "speech");
+    }
+  }
+
   async function fail(turn: ActiveTurn) {
     if (!turn.active) return;
     terminal(turn);
@@ -108,6 +214,10 @@ export function createVoiceProvider(options: Options) {
   function start(input: VoiceBinding, inputFormat: Format): VoiceRelay | { status: "unavailable" } {
     const binding = bindingSchema.parse(input);
     const format = AudioFormat.parse(inputFormat);
+    // Fetched now so it is ready by the time the provider says Welcome.
+    const context: Promise<TurnContext | undefined> = options.context
+      ? options.context(binding).catch(() => undefined)
+      : Promise.resolve(undefined);
     let reason: "configuration_missing" | "playback_unverified" | undefined;
     if (!config?.deepgramApiKey || !config.elevenLabsApiKey || !config.elevenLabsVoiceId || !config.thinkEndpointUrl) {
       reason = "configuration_missing";
@@ -130,6 +240,7 @@ export function createVoiceProvider(options: Options) {
     const turn: ActiveTurn = {
       binding, token, model, socket, format, active: true, ready: false,
       inputStopped: false, approved: false, audioStarted: false, resolveReady,
+      heldAudio: [], allowed: new Set(), spoken: [],
     };
     tokens.set(token, turn);
     turns.set(binding.turnId, turn);
@@ -140,18 +251,26 @@ export function createVoiceProvider(options: Options) {
         if (!(await options.isTurnActive(binding))) { cancel(binding.turnId); return; }
         if (!turn.active) return;
         if (isBinary) {
-          if (!turn.approved) { await fail(turn); return; }
           const bytes = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
           if (!bytes.byteLength || bytes.byteLength % 2) { await fail(turn); return; }
-          if (!turn.audioStarted) {
-            await options.onEvent(binding, { type: "audio_start", format });
-            turn.audioStarted = true;
+          if (!turn.approved) {
+            // The controlled path never has audio before its reply. The
+            // conversational one does: the provider streams the first frame
+            // of a sentence before the sentence itself, so hold it until the
+            // text arrives and passes.
+            if (!conversational) { await fail(turn); return; }
+            turn.heldAudio.push(bytes);
+            if (turn.heldAudio.length > HELD_AUDIO_LIMIT) await fail(turn);
+            return;
           }
-          if (turn.active) await options.onEvent(binding, { type: "audio", pcm: bytes });
+          await deliver(turn, bytes);
           return;
         }
-        const event = JSON.parse(data.toString()) as { type?: string; role?: string };
+        const event = JSON.parse(data.toString()) as { type?: string; role?: string; content?: unknown };
         if (event.type === "Welcome") {
+          const remembered = await context;
+          if (!turn.active) return;
+          for (const value of contextNumbers(remembered)) turn.allowed.add(value);
           socket.send(JSON.stringify({
             type: "Settings", mip_opt_out: true, flags: { history: false },
             audio: {
@@ -162,7 +281,7 @@ export function createVoiceProvider(options: Options) {
               listen: { provider: { type: "deepgram", model: "flux-general-en", version: "v2" } },
               think: config.conversationModel ? {
                 provider: { type: "open_ai", model: config.conversationModel },
-                prompt: COACH_PROMPT,
+                prompt: coachPrompt(remembered),
                 functions: [{
                   name: "get_chart_metric",
                   description: "Return one computed value from the chart the learner is looking at. "
@@ -232,9 +351,18 @@ export function createVoiceProvider(options: Options) {
           resolveReady(true);
         } else if (event.type === "UserStartedSpeaking" && turn.approved) {
           cancel(binding.turnId);
+        } else if (event.type === "ConversationText") {
+          await heard(turn, event.role, String(event.content ?? ""));
         } else if (event.type === "AgentAudioDone" && turn.approved) {
+          if (turn.approvedBy === "speech" && turn.spoken.length > 1) {
+            // The first sentence approved the turn; the record should hold all of them.
+            await options.onEvent(binding, { type: "response", reply: { kind: "conversation", text: turn.spoken.join(" ") } });
+          }
           terminal(turn);
           await options.onEvent(binding, { type: "generated" });
+        } else if (event.type === "AgentAudioDone") {
+          // Finished speaking without ever producing a reply this server approved.
+          await fail(turn);
         } else if (event.type === "FunctionCallRequest") {
           await functionCall(turn, event as unknown as FunctionCallEvent);
         } else if (event.type === "Error") await fail(turn);
@@ -271,7 +399,7 @@ export function createVoiceProvider(options: Options) {
             text = rating.comment ?? "Rated on the feedback page.";
           } else text = "That session is no longer open.";
         } catch { text = "I could not rate that."; }
-        turn.approved = true;
+        await approve(turn, "function");
         if (turn.socket.readyState !== WebSocket.OPEN) return;
         turn.socket.send(JSON.stringify({ type: "FunctionCallResponse", id: call.id, name: call.name, content: text }));
         continue;
@@ -289,7 +417,7 @@ export function createVoiceProvider(options: Options) {
         // may speak. Without this a learner who only states their analysis,
         // never asking about the chart, has no approved reply and the audio
         // gate fails the turn.
-        turn.approved = true;
+        await approve(turn, "function");
         if (turn.socket.readyState !== WebSocket.OPEN) return;
         turn.socket.send(JSON.stringify({ type: "FunctionCallResponse", id: call.id, name: call.name, content: text }));
         continue;
@@ -307,7 +435,7 @@ export function createVoiceProvider(options: Options) {
             await options.onEvent(turn.binding, { type: "final_transcript", text: asked.data.question });
             await options.onEvent(turn.binding, { type: "response", reply });
             // Only a reply this server computed unlocks playback.
-            turn.approved = true;
+            await approve(turn, "function");
           }
         }
       } catch { /* The fixed refusal above still answers the model. */ }
@@ -354,7 +482,7 @@ export function createVoiceProvider(options: Options) {
     catch { await fail(turn); return jsonResponse(503, { error: { code: "provider_unavailable" } }); }
     if (!turn.active) return jsonResponse(409, { error: { code: "state_conflict" } });
     const content = renderSafeReply(reply);
-    turn.approved = true;
+    await approve(turn, "function");
     const base = { id: `chatcmpl-${turn.binding.turnId}`, created: Math.floor(Date.now() / 1000), model: turn.model };
     if (parsed.data.stream) {
       const chunk = { ...base, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }] };

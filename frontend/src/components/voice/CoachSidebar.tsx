@@ -45,6 +45,18 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   const [conversing, setConversing] = useState(false);
   /** Fields the coach heard the learner state, for them to check before submitting. */
   const [heard, setHeard] = useState<(keyof AnalysisDraft)[]>([]);
+  /** The saved draft is applied once on load, never over edits made since. */
+  const restored = useRef(false);
+  const applyDraft = useCallback((value: AnalysisDraft) => {
+    if (value.thesis !== undefined) setThesis(value.thesis);
+    if (value.prediction !== undefined) setPrediction(value.prediction);
+    if (value.hypotheticalAction !== undefined) setAction(value.hypotheticalAction);
+    if (value.confidencePercent !== undefined) setConfidence(String(value.confidencePercent));
+    if (value.claimedEvidence?.length) setEvidence(value.claimedEvidence.join("\n"));
+    if (value.invalidation !== undefined) setInvalidation(value.invalidation);
+    if (value.riskReasoning !== undefined) setRisk(value.riskReasoning);
+    setHeard(Object.keys(value).filter(key => value[key as keyof AnalysisDraft] !== undefined) as (keyof AnalysisDraft)[]);
+  }, []);
   const voice = useRef<VoiceClient | null>(null);
   const mounted = useRef(true);
   /** Read inside the `complete` callback, which closes over its first render. */
@@ -54,7 +66,8 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   const loadHistory = useCallback(async () => {
     const history = await request("getHistory", { params: { sessionId } });
     setTurns(history.turns.map(t => ({ id: t.id, question: t.finalTranscript, answer: t.reply ? renderSafeReply(t.reply) : undefined })));
-  }, [sessionId]);
+    if (history.draft && !restored.current) { restored.current = true; applyDraft(history.draft); }
+  }, [sessionId, applyDraft]);
   useEffect(() => { void loadHistory().catch(() => setError("Could not load the conversation.")); }, [loadHistory]);
 
   useEffect(() => {
@@ -65,16 +78,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
       state: setVoiceState,
       transcript: setVoiceTranscript,
       answer: setVoiceAnswer,
-      draft: value => {
-        if (value.thesis !== undefined) setThesis(value.thesis);
-        if (value.prediction !== undefined) setPrediction(value.prediction);
-        if (value.hypotheticalAction !== undefined) setAction(value.hypotheticalAction);
-        if (value.confidencePercent !== undefined) setConfidence(String(value.confidencePercent));
-        if (value.claimedEvidence?.length) setEvidence(value.claimedEvidence.join("\n"));
-        if (value.invalidation !== undefined) setInvalidation(value.invalidation);
-        if (value.riskReasoning !== undefined) setRisk(value.riskReasoning);
-        setHeard(Object.keys(value).filter(key => value[key as keyof AnalysisDraft] !== undefined) as (keyof AnalysisDraft)[]);
-      },
+      draft: applyDraft,
       // A failed turn must not re-arm: that would hammer getUserMedia.
       error: message => {
         setError(message);
@@ -92,7 +96,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
     });
     voice.current = client;
     return () => { mounted.current = false; abort.abort(); client.cancel(); voice.current = null; };
-  }, [sessionId, loadHistory]);
+  }, [sessionId, loadHistory, applyDraft]);
 
   /** A submitted session ends the conversation rather than re-arming into it. */
   useEffect(() => {

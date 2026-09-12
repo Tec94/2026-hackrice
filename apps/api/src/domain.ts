@@ -22,6 +22,8 @@ export type State = {
   events: C.ServerMessage[];
   clientCommands: string[];
   reflection?: z.infer<typeof C.Reflection>;
+  /** The analysis as the coach has heard it so far, merged across turns. */
+  draft?: C.AnalysisDraft;
   receipt?: any;
   commitment?: { salt: string; hash: string; payload: unknown };
   backboard?: any;

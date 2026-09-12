@@ -3,7 +3,7 @@ import type { IncomingMessage } from "node:http";
 import WebSocket, { WebSocketServer, type RawData } from "ws";
 import * as C from "@hackrice/contracts";
 import { z } from "zod";
-import { createVoiceProvider, type VoiceBinding, type VoiceConfig, type VoiceRelay, type VoiceProviderEvent } from "./providers/voice.js";
+import { createVoiceProvider, type TurnContext, type VoiceBinding, type VoiceConfig, type VoiceRelay, type VoiceProviderEvent } from "./providers/voice.js";
 import { applyRating } from "./market.js";
 import { ReplayService } from "./service.js";
 import { appendEvent, ApiFailure, RETENTION_MS } from "./domain.js";
@@ -19,6 +19,7 @@ export class Realtime {
   constructor(public service: ReplayService, private recordings: Recordings, public format: z.infer<typeof C.AudioFormat>, config?: VoiceConfig) {
     this.provider = createVoiceProvider({ config,
       answer: (b, text) => service.calculate(b.userId, b.sessionId, b.chartSnapshotId, text),
+      context: (b) => this.turnContext(b),
       isTurnActive: async (b) => {
         if (!this.active.get(b.turnId)?.active) return false;
         try { const state = await service.store.read(b.userId, b.sessionId); service.assertBlind(state); return true; } catch { return false; }
@@ -30,6 +31,24 @@ export class Realtime {
   async emit(userId: string, sessionId: string, event: Record<string, unknown>) {
     await this.service.store.update(userId, sessionId, (state) => appendEvent(state, event));
     await this.broadcast(userId, sessionId);
+  }
+
+  /**
+   * What the coach should remember going into a new turn.
+   *
+   * Each voice turn is its own provider session, so without this the model
+   * meets the learner fresh every time and "and the volume?" has nothing to
+   * refer to. Coach lines are handed over as rendered text; the provider masks
+   * the numbers in them so a value is only ever spoken after a fresh
+   * calculation in the current turn.
+   */
+  async turnContext(binding: VoiceBinding): Promise<TurnContext> {
+    const state = await this.service.store.read(binding.userId, binding.sessionId);
+    const turns = state.turns.filter((turn) => turn.finalTranscript).slice(-8).map((turn) => ({
+      learner: turn.finalTranscript!,
+      ...(turn.reply ? { coach: C.renderSafeReply(turn.reply) } : {}),
+    }));
+    return { turns, ...(state.draft ? { draft: state.draft } : {}) };
   }
 
   async broadcast(userId: string, sessionId: string) {
@@ -83,6 +102,8 @@ export class Realtime {
             appendEvent(state, { type: "evaluation.updated", evaluation: rated });
           }
         } else if (event.type === "draft") {
+          // Merged, not replaced: a later sentence adds to the form.
+          state.draft = { ...(state.draft ?? {}), ...event.draft };
           appendEvent(state, { type: "analysis.draft", draft: event.draft });
         } else if (event.type === "unavailable") {
           turn.status = "failed";

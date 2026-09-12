@@ -193,6 +193,9 @@ export const SafeReply = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("calculation"), facts: z.array(Fact).min(1) }),
   z.strictObject({ kind: z.literal("concept"), concept: z.enum(["ema", "rsi", "relative_volume", "invalidation"]) }),
   z.strictObject({ kind: z.literal("refusal"), reason: z.enum(["advice", "future", "news", "unsupported", "insufficient_data"]) }),
+  // Spoken by the conversational coach. Carries no calculation: the server
+  // approves it only when every number in it was given by the learner.
+  z.strictObject({ kind: z.literal("conversation"), text: Text }),
 ]);
 const metricLabels: Record<z.infer<typeof Metric>, string> = {
   open: "Opening price", high: "High price", low: "Low price", close: "Closing price",
@@ -220,6 +223,7 @@ export function renderSafeReply(input: unknown): string {
   const reply = SafeReply.parse(input);
   if (reply.kind === "concept") return conceptText[reply.concept];
   if (reply.kind === "refusal") return refusalText[reply.reason];
+  if (reply.kind === "conversation") return reply.text;
   return reply.facts.map((fact) => `${metricLabels[fact.metric]}${fact.period ? ` over ${fact.period} bars` : ""}: ${fact.value} ${fact.unit}.`).join(" ");
 }
 
@@ -259,6 +263,8 @@ export const HistoryTurn = z.strictObject({
 export const History = z.strictObject({
   session: PublicSession, turns: z.array(HistoryTurn), submissions: z.array(RecordedSubmission),
   evaluations: z.array(Evaluation), recordings: z.array(Recording), reflection: Reflection.optional(),
+  /** What the coach has taken down of the analysis so far, so a reload keeps the form. */
+  draft: SubmissionDraft.optional(),
 });
 export const Reveal = z.strictObject({
   session: PublicSession.refine((s) => ["revealed", "completed"].includes(s.status), "Reveal requires an authorized revealed session."),

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { createVoiceProvider } from "../dist/providers/voice.js";
+import { createVoiceProvider, coachPrompt, maskNumbers, numbersIn } from "../dist/providers/voice.js";
 import { createAnalysisRater, ratingBrief } from "../dist/providers/rater.js";
 import { createBackboardProvider } from "../dist/providers/backboard.js";
 import { renderSafeReply } from "@hackrice/contracts";
@@ -301,4 +301,102 @@ test("the brief is plain lines with every field the learner wrote and placeholde
   assert.ok(text.includes("- (none available)"));
   assert.ok(text.includes("- Invalidation: (none written)"));
   assert.ok(text.includes("- Confidence: 70%"));
+});
+
+
+const settle = async () => { for (let i = 0; i < 6; i++) await tick(); };
+
+/** A conversation-mode turn: hosted model, no controlled endpoint, remembered context. */
+async function conversationHarness(overrides = {}) {
+  const events = [];
+  const socket = new FakeSocket();
+  const provider = createVoiceProvider({
+    config: { ...config, conversationModel: "test-model" }, answer: async () => concept, isTurnActive: async () => true,
+    onEvent: (_binding, event) => events.push(event), socketFactory: () => socket, ...overrides,
+  });
+  const relay = provider.start(binding, format);
+  socket.json({ type: "Welcome" });
+  await settle();
+  const settings = JSON.parse(socket.sent[0]);
+  socket.json({ type: "SettingsApplied" });
+  assert.equal(await relay.ready, true);
+  return { provider, relay, socket, settings, events, types: () => events.map((event) => event.type) };
+}
+
+test("numbers are found and normalised, and masked in coach lines", () => {
+  assert.deepEqual(numbersIn("Closing price: 137.40 USDT, volume 69,717.21, so 70% then"), ["137.4", "69717.21", "70"]);
+  assert.equal(maskNumbers("Closing price: 137.42 USDT. Volume: 69,717.21 SOL."), "Closing price: [value] USDT. Volume: [value] SOL.");
+});
+
+test("a new turn is told what was said and recorded before it, with chart values masked", async () => {
+  const context = async () => ({
+    turns: [{ learner: "what is the closing price", coach: "Closing price: 111 USDT." }, { learner: "I would go long" }],
+    draft: { prediction: "higher", hypotheticalAction: "long", confidencePercent: 70 },
+  });
+  const h = await conversationHarness({ context });
+  const prompt = h.settings.agent.think.prompt;
+  assert.ok(prompt.includes("Learner: what is the closing price"));
+  assert.ok(prompt.includes("Coach: Closing price: [value] USDT."));
+  assert.equal(prompt.includes("111"), false, "a value from an earlier turn is never handed to the model");
+  assert.ok(prompt.includes("- Confidence (%): 70"));
+  assert.ok(prompt.includes("- Prediction: higher"));
+  assert.equal("endpoint" in h.settings.agent.think, false);
+  h.relay.cancel();
+});
+
+test("a conversational reply is approved once its text arrives, and audio that came first is released in order", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [] }) });
+  h.socket.json({ type: "ConversationText", role: "user", content: "I am 60 percent confident" });
+  // Deepgram streams the first frames of a sentence before the sentence.
+  h.socket.emit("message", Buffer.from([1, 0]), true);
+  h.socket.emit("message", Buffer.from([2, 0]), true);
+  await settle();
+  assert.deepEqual(h.types(), [], "held, not delivered and not failed");
+  h.socket.json({ type: "ConversationText", role: "assistant", content: "Sixty it is. What is your thesis?" });
+  await settle();
+  assert.deepEqual(h.types(), ["response", "audio_start", "audio", "audio"]);
+  assert.deepEqual(h.events[0].reply, { kind: "conversation", text: "Sixty it is. What is your thesis?" });
+  assert.deepEqual([...h.events[2].pcm], [1, 0]);
+  h.socket.emit("message", Buffer.from([3, 0]), true);
+  h.socket.json({ type: "ConversationText", role: "assistant", content: "So 60 percent, noted." });
+  h.socket.json({ type: "AgentAudioDone" });
+  await settle();
+  assert.deepEqual(h.types().slice(-3), ["audio", "response", "generated"]);
+  assert.equal(h.events.at(-2).reply.text, "Sixty it is. What is your thesis? So 60 percent, noted.");
+});
+
+test("a conversational reply that speaks a number nobody gave it is stopped before any audio leaves", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [{ learner: "what is the close", coach: "Closing price: 111 USDT." }] }) });
+  h.socket.emit("message", Buffer.from([1, 0]), true);
+  h.socket.json({ type: "ConversationText", role: "assistant", content: "The close is 111 USDT." });
+  await settle();
+  assert.equal(h.types().includes("audio"), false);
+  assert.equal(h.types().includes("response"), false);
+  assert.deepEqual(h.events.at(-1), { type: "unavailable", reason: "provider_failure" });
+});
+
+test("a turn that answered through a function may repeat the value it was given", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [] }), answer: async () => ({
+    kind: "calculation", facts: [{ id: "88888888-8888-4888-8888-888888888888", chartSnapshotId: snapshotId, metric: "close", value: "137.42", unit: "USDT", calculatedThroughOffsetMinutes: 0 }],
+  }) });
+  h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "c1", name: "get_chart_metric", arguments: JSON.stringify({ question: "what is the close" }) }] });
+  await settle();
+  h.socket.emit("message", Buffer.from([1, 0]), true);
+  h.socket.json({ type: "ConversationText", role: "assistant", content: "The closing price is 137.42 USDT." });
+  h.socket.json({ type: "AgentAudioDone" });
+  await settle();
+  assert.deepEqual(h.types(), ["final_transcript", "response", "audio_start", "audio", "generated"]);
+});
+
+test("finishing without an approved reply fails the turn instead of leaving it open", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [] }) });
+  h.socket.json({ type: "AgentAudioDone" });
+  await settle();
+  assert.deepEqual(h.events.at(-1), { type: "unavailable", reason: "provider_failure" });
+});
+
+test("the prompt for a first turn says so rather than inventing history", () => {
+  const prompt = coachPrompt(undefined);
+  assert.ok(prompt.includes("(this is the first thing the learner has said)"));
+  assert.ok(prompt.includes("(nothing recorded yet)"));
 });

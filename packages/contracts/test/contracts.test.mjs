@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   Bars, ClientEvent, CreateSession, PublicSession, SafeReply,
-  ServerEvent, Submission, SubmissionDraft, HistoryTurn, Deletion, renderSafeReply,
+  ServerEvent, Submission, SubmissionDraft, HistoryTurn, History, Deletion, renderSafeReply,
   encodeAudioFrame, decodeAudioFrame,
 } from "../dist/index.js";
 
@@ -128,4 +128,25 @@ test("the analysis draft event carries a draft to the browser", () => {
   };
   assert.equal(ServerEvent.safeParse(event).success, true);
   assert.equal(ServerEvent.safeParse({ ...event, draft: { prediction: "up" } }).success, false);
+});
+
+
+test("a conversational reply is a reply kind of its own and renders as its text", () => {
+  const reply = { kind: "conversation", text: "Tell me what you see at the highs." };
+  assert.equal(SafeReply.safeParse(reply).success, true);
+  assert.equal(renderSafeReply(reply), "Tell me what you see at the highs.");
+  assert.equal(SafeReply.safeParse({ kind: "conversation", text: "" }).success, false);
+  assert.equal(SafeReply.safeParse({ kind: "conversation" }).success, false);
+});
+
+test("history carries the draft the coach has taken down so far", () => {
+  const session = {
+    id: "11111111-1111-4111-8111-111111111111", symbol: "SOL/USDT", status: "exploring", timeframe: "15m",
+    chartRange: { from: -600, to: 0 }, predictionHorizon: "1h", latestChartRevision: 0,
+    createdAt: new Date(0).toISOString(), expiresAt: new Date(1).toISOString(),
+  };
+  const base = { session, turns: [], submissions: [], evaluations: [], recordings: [] };
+  assert.equal(History.safeParse(base).success, true);
+  assert.equal(History.safeParse({ ...base, draft: { prediction: "higher", confidencePercent: 70 } }).success, true);
+  assert.equal(History.safeParse({ ...base, draft: { prediction: "up" } }).success, false);
 });

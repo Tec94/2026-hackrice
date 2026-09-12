@@ -196,7 +196,8 @@ export class ReplayService {
   async history(userId: string, sessionId: string) {
     const state = await this.store.read(userId, sessionId);
     return C.History.parse({ session: state.public, turns: state.turns, submissions: state.submissions,
-      evaluations: state.evaluations, recordings: state.recordings, ...(state.reflection ? { reflection: state.reflection } : {}) });
+      evaluations: state.evaluations, recordings: state.recordings, ...(state.reflection ? { reflection: state.reflection } : {}),
+      ...(state.draft ? { draft: state.draft } : {}) });
   }
 
   async receipt(userId: string, sessionId: string) {
