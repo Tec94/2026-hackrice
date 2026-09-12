@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import WebSocket, { type RawData } from "ws";
 import { z } from "zod";
-import { AudioFormat, Id, SafeReply, renderSafeReply } from "@hackrice/contracts";
+import { AudioFormat, Id, SafeReply, SubmissionDraft, renderSafeReply } from "@hackrice/contracts";
 
 export type VoiceBinding = { userId: string; sessionId: string; turnId: string; chartSnapshotId: string };
 export type VoiceConfig = {
@@ -24,6 +24,13 @@ const COACH_PROMPT = [
   "If it returns a refusal, say that and explain you can only describe what is on the chart.",
   "Never predict future prices, never give trading advice, and never say what happens next.",
   "Keep replies to one or two short spoken sentences.",
+  "You are also taking down the learner's own analysis as they talk.",
+  "Whenever they state a view, a direction, a confidence, a reason, or what would change their mind,",
+  "call record_analysis with just the parts they actually said. Do not invent the parts they did not.",
+  "Saying it goes up, rises, or is going higher is prediction higher; down or falling is lower; flat is unchanged.",
+  "Record prediction whenever they name a direction, even when they also say what they would do about it.",
+  "Write evidence as a comparison such as \"close > 137.42\" when they give a number, otherwise in their words.",
+  "After recording, tell them briefly what you noted and that it is on screen for them to review and submit.",
 ].join(" ");
 type Format = z.infer<typeof AudioFormat>;
 type Reply = z.infer<typeof SafeReply>;
@@ -34,6 +41,7 @@ export type VoiceProviderEvent =
   | { type: "audio"; pcm: Uint8Array }
   | { type: "generated" }
   | { type: "cancelled" }
+  | { type: "draft"; draft: z.infer<typeof SubmissionDraft> }
   | { type: "unavailable"; reason: "configuration_missing" | "playback_unverified" | "provider_failure" };
 export type VoiceRelay = {
   status: "connecting";
@@ -166,6 +174,25 @@ export function createVoiceProvider(options: Options) {
                     },
                     required: ["question"],
                   },
+                }, {
+                  name: "record_analysis",
+                  description: "Record the learner's own analysis as they say it, to fill in the form they "
+                    + "review and submit. Include only fields they actually stated.",
+                  parameters: {
+                    type: "object",
+                    properties: {
+                      thesis: { type: "string", description: "Their reading of the chart, in their words." },
+                      prediction: { type: "string", enum: ["higher", "lower", "unchanged"] },
+                      hypotheticalAction: { type: "string", enum: ["long", "short", "wait"] },
+                      confidencePercent: { type: "number", description: "0-100, only if they gave a number." },
+                      claimedEvidence: {
+                        type: "array", items: { type: "string" },
+                        description: "Each reason they gave, one per entry.",
+                      },
+                      invalidation: { type: "string", description: "What would prove them wrong." },
+                      riskReasoning: { type: "string", description: "How they think about the risk." },
+                    },
+                  },
                 }],
               } : {
                 provider: { type: "open_ai", model },
@@ -217,6 +244,19 @@ export function createVoiceProvider(options: Options) {
     const calls = event.functions ?? [];
     for (const call of calls) {
       let text = renderSafeReply(unsupported);
+      if (call.name === "record_analysis") {
+        try {
+          const draft = SubmissionDraft.parse(JSON.parse(call.arguments || "{}"));
+          const stated = Object.values(draft).some((value) => value !== undefined);
+          if (stated && await options.isTurnActive(turn.binding)) {
+            await options.onEvent(turn.binding, { type: "draft", draft });
+            text = "Noted on the analysis form for you to review.";
+          } else text = "Nothing new to record yet.";
+        } catch { text = "That did not include anything I could record."; }
+        if (turn.socket.readyState !== WebSocket.OPEN) return;
+        turn.socket.send(JSON.stringify({ type: "FunctionCallResponse", id: call.id, name: call.name, content: text }));
+        continue;
+      }
       try {
         const asked = z.object({ question: z.string() }).safeParse(JSON.parse(call.arguments || "{}"));
         if (asked.success && await options.isTurnActive(turn.binding)) {

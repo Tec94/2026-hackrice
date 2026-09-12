@@ -1,10 +1,11 @@
-import { ClientEvent, ServerEvent, decodeAudioFrame, encodeAudioFrame, renderSafeReply, type ChartContext, type ServerMessage } from '@hackrice/contracts';
+import { ClientEvent, ServerEvent, decodeAudioFrame, encodeAudioFrame, renderSafeReply, type AnalysisDraft, type ChartContext, type ServerMessage } from '@hackrice/contracts';
 
 export type VoiceState = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
 type Callbacks = {
   state(value: VoiceState): void;
   transcript(value: string): void;
   answer(value: string): void;
+  draft(value: AnalysisDraft): void;
   error(value: string): void;
   complete(): void;
 };
@@ -145,6 +146,7 @@ export class VoiceClient {
     if (message.type === 'session.error' && (!message.turnId || message.turnId === turn.id)) {
       throw new Error(`Voice unavailable (${message.error.code}). Check provider setup and playback validation.`);
     }
+    if (message.type === 'analysis.draft') { this.callbacks.draft(message.draft); return; }
     if (!('turnId' in message) || message.turnId !== turn.id) return;
     if ('chartSnapshotId' in message && message.chartSnapshotId !== turn.snapshotId) throw new Error('Voice snapshot mismatch.');
     if (message.type === 'voice.ready') { turn.listening = true; this.callbacks.state('listening'); }

@@ -72,6 +72,8 @@ export class Realtime {
           turn.status = turn.finalTranscript ? "completed" : "failed";
           turn.audioDelivery = live?.sentAudio ? "partial" : "none";
           appendEvent(state, { type: "assistant.completed", turnId: binding.turnId, delivery: turn.audioDelivery });
+        } else if (event.type === "draft") {
+          appendEvent(state, { type: "analysis.draft", draft: event.draft });
         } else if (event.type === "unavailable") {
           turn.status = "failed";
           appendEvent(state, { type: "session.error", turnId: binding.turnId, error: { code: "provider_unavailable", requestId: randomUUID() } });

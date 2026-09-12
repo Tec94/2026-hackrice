@@ -1,10 +1,16 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { renderSafeReply, type ChartContext, type AnalysisSubmission } from "@hackrice/contracts";
+import { renderSafeReply, type AnalysisDraft, type ChartContext, type AnalysisSubmission } from "@hackrice/contracts";
 import { request } from "@/services/api-client";
 import { Badge, Button, Dialog, ErrorBanner, Input, Select, Textarea } from "@/components/ui";
 import { VoiceClient, type VoiceState } from "@/services/voice-client";
+
+const FIELD_LABEL = (field: keyof AnalysisDraft) => ({
+  thesis: "thesis", prediction: "prediction", hypotheticalAction: "action",
+  confidencePercent: "confidence", claimedEvidence: "evidence",
+  invalidation: "invalidation", riskReasoning: "risk",
+}[field]);
 
 const STATUS: Record<VoiceState, string> = {
   idle: "Paused",
@@ -35,6 +41,8 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   const [voiceAnswer, setVoiceAnswer] = useState("");
   /** True once the user has opened the conversation; turns then chain themselves. */
   const [conversing, setConversing] = useState(false);
+  /** Fields the coach heard the learner state, for them to check before submitting. */
+  const [heard, setHeard] = useState<(keyof AnalysisDraft)[]>([]);
   const voice = useRef<VoiceClient | null>(null);
   const mounted = useRef(true);
   /** Read inside the `complete` callback, which closes over its first render. */
@@ -55,6 +63,16 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
       state: setVoiceState,
       transcript: setVoiceTranscript,
       answer: setVoiceAnswer,
+      draft: value => {
+        if (value.thesis !== undefined) setThesis(value.thesis);
+        if (value.prediction !== undefined) setPrediction(value.prediction);
+        if (value.hypotheticalAction !== undefined) setAction(value.hypotheticalAction);
+        if (value.confidencePercent !== undefined) setConfidence(String(value.confidencePercent));
+        if (value.claimedEvidence?.length) setEvidence(value.claimedEvidence.join("\n"));
+        if (value.invalidation !== undefined) setInvalidation(value.invalidation);
+        if (value.riskReasoning !== undefined) setRisk(value.riskReasoning);
+        setHeard(Object.keys(value).filter(key => value[key as keyof AnalysisDraft] !== undefined) as (keyof AnalysisDraft)[]);
+      },
       // A failed turn must not re-arm: that would hammer getUserMedia.
       error: message => {
         setError(message);
@@ -127,6 +145,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
     {error && <div className="mt-3"><ErrorBanner title="Could not continue" message={error} /></div>}
     <form className="mt-6 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); setConfirming(true); }}>
       <h3 className="text-lead font-semibold text-ink">Your analysis</h3>
+      {heard.length > 0 && <p className="text-tiny text-coach">Filled in from what you said: {heard.map(FIELD_LABEL).join(", ")}. Check it, edit anything, then submit.</p>}
       <label className="block text-base text-ink">Thesis<Textarea value={thesis} onChange={e => setThesis(e.target.value)} required /></label>
       <div className="grid grid-cols-2 gap-3">
         <label className="text-base text-ink">Prediction<Select value={prediction} onChange={e => setPrediction(e.target.value as typeof prediction)}><option value="higher">Higher</option><option value="lower">Lower</option><option value="unchanged">Unchanged</option></Select></label>

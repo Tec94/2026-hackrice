@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   Bars, ClientEvent, CreateSession, PublicSession, SafeReply,
-  ServerEvent, Submission, HistoryTurn, Deletion, renderSafeReply,
+  ServerEvent, Submission, SubmissionDraft, HistoryTurn, Deletion, renderSafeReply,
   encodeAudioFrame, decodeAudioFrame,
 } from "../dist/index.js";
 
@@ -101,4 +101,31 @@ test("binary audio binds late packets to their original turn without base64", ()
   assert.deepEqual(decoded.pcm, pcm);
   assert.throws(() => decodeAudioFrame(new Uint8Array(16)));
   assert.throws(() => encodeAudioFrame(id, new Uint8Array(1)));
+});
+
+test("a submission draft accepts partial analyses and rejects invented shapes", () => {
+  // Speech supplies fields in whatever order they are thought of, so any
+  // subset is valid, including none of them.
+  assert.equal(SubmissionDraft.safeParse({}).success, true);
+  assert.equal(SubmissionDraft.safeParse({ prediction: "higher" }).success, true);
+  assert.equal(SubmissionDraft.safeParse({
+    thesis: "higher lows are holding", prediction: "higher", hypotheticalAction: "long",
+    confidencePercent: 70, claimedEvidence: ["close > 137.42"],
+    invalidation: "a break below the recent low", riskReasoning: "thin volume",
+  }).success, true);
+  // A draft is not a submission: it carries no snapshot id, and the enums and
+  // percentage are still the contract's.
+  assert.equal(SubmissionDraft.safeParse({ prediction: "sideways" }).success, false);
+  assert.equal(SubmissionDraft.safeParse({ confidencePercent: 140 }).success, false);
+  assert.equal(SubmissionDraft.safeParse({ chartSnapshotId: "11111111-1111-4111-8111-111111111111" }).success, false);
+});
+
+test("the analysis draft event carries a draft to the browser", () => {
+  const event = {
+    protocolVersion: 1, eventId: "11111111-1111-4111-8111-111111111111",
+    sessionId: "22222222-2222-4222-8222-222222222222", sequence: 4,
+    type: "analysis.draft", draft: { prediction: "lower", confidencePercent: 40 },
+  };
+  assert.equal(ServerEvent.safeParse(event).success, true);
+  assert.equal(ServerEvent.safeParse({ ...event, draft: { prediction: "up" } }).success, false);
 });

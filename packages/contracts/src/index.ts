@@ -104,6 +104,23 @@ export const Submission = z.strictObject({
   invalidation: Text.optional(),
   riskReasoning: Text.optional(),
 });
+/**
+ * A spoken analysis, as understood so far.
+ *
+ * Every field is optional because someone talking through a chart supplies
+ * them in whatever order they think of them. Nothing here is submitted; it
+ * populates the form the learner reviews and commits themselves.
+ */
+export const SubmissionDraft = z.strictObject({
+  thesis: Text.optional(),
+  prediction: Prediction.optional(),
+  hypotheticalAction: z.enum(["long", "short", "wait"]).optional(),
+  confidencePercent: Percentage.optional(),
+  claimedEvidence: z.array(Text).optional(),
+  invalidation: Text.optional(),
+  riskReasoning: Text.optional(),
+});
+
 export const RecordedSubmission = z.strictObject({
   id: Id,
   sessionId: Id,
@@ -254,6 +271,7 @@ export const ServerEvent = z.discriminatedUnion("type", [
   z.strictObject({ ...serverBase, type: z.literal("assistant.audio.start"), turnId: Id, format: AudioFormat }),
   z.strictObject({ ...serverBase, type: z.literal("assistant.completed"), turnId: Id, delivery: z.enum(["none", "partial", "completed"]) }),
   z.strictObject({ ...serverBase, type: z.literal("assistant.cancelled"), turnId: Id }),
+  z.strictObject({ ...serverBase, type: z.literal("analysis.draft"), draft: SubmissionDraft }),
   z.strictObject({ ...serverBase, type: z.literal("evaluation.updated"), evaluation: Evaluation }),
   z.strictObject({ ...serverBase, type: z.literal("session.revealed"), result: Reveal }),
   z.strictObject({ ...serverBase, type: z.literal("session.error"), error: ApiError, turnId: Id.optional() }),
@@ -315,6 +333,7 @@ export const httpContracts = {
 export type Session = z.infer<typeof PublicSession>;
 export type ChartContext = z.infer<typeof ChartSnapshot>;
 export type AnalysisSubmission = z.infer<typeof Submission>;
+export type AnalysisDraft = z.infer<typeof SubmissionDraft>;
 export type AnalysisEvaluation = z.infer<typeof Evaluation>;
 export type ClientMessage = z.infer<typeof ClientEvent>;
 export type ServerMessage = z.infer<typeof ServerEvent>;
