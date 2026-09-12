@@ -200,6 +200,31 @@ test("the conversational model's rephrasings reach the same metrics", () => {
     { kind: "metrics", metrics: ["visible_high", "visible_low"] });
 });
 
+test("questions survive being misheard by speech recognition", () => {
+  // Acronyms come back spelled out or as the words they sound like.
+  for (const question of ["what is the rsi 14", "what is the r s i 14", "are size 14", "rsi fourteen"]) {
+    assert.deepEqual(parseQuestionIntent(question), { kind: "metric", metric: "rsi", period: 14 }, question);
+  }
+  for (const question of ["what is the ema 21", "what is the e m a 21", "emma 21", "ema twenty one"]) {
+    assert.deepEqual(parseQuestionIntent(question), { kind: "metric", metric: "ema", period: 21 }, question);
+  }
+  // Chart vocabulary that sounds like ordinary words.
+  assert.deepEqual(parseQuestionIntent("what is the closing prize"), { kind: "metric", metric: "close" });
+  assert.deepEqual(parseQuestionIntent("what is the clothing price"), { kind: "metric", metric: "close" });
+  assert.deepEqual(parseQuestionIntent("what is the vall you m"), { kind: "metric", metric: "volume" });
+  assert.deepEqual(parseQuestionIntent("what is the loan"), { kind: "metric", metric: "low" });
+  assert.deepEqual(parseQuestionIntent("visible hi"), { kind: "metric", metric: "visible_high" });
+});
+
+test("correcting a mishearing cannot turn a refused question into an answered one", () => {
+  // Corrections run after the refusals, so vocabulary repair never opens a
+  // path around them however the question was heard.
+  assert.deepEqual(parseQuestionIntent("should i buy at the loan"), { kind: "refusal", reason: "advice" });
+  assert.deepEqual(parseQuestionIntent("will the r s i go up"), { kind: "refusal", reason: "future" });
+  assert.deepEqual(parseQuestionIntent("should i go long on ema 21"), { kind: "refusal", reason: "advice" });
+  assert.deepEqual(parseQuestionIntent("predict the e m a tomorrow"), { kind: "refusal", reason: "future" });
+});
+
 test("widened phrasing still refuses advice, future, and news questions", () => {
   // The refusals run before any metric matching, so no amount of added wording
   // can turn one of these into a calculation.

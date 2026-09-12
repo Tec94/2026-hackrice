@@ -223,6 +223,40 @@ type Intent = { kind: "metric"; metric: MetricName; period?: number; drawingId?:
   | { kind: "concept"; concept: "ema" | "rsi" | "relative_volume" | "invalidation" }
   | { kind: "refusal"; reason: "advice" | "future" | "news" | "unsupported" };
 
+/** What speech recognition tends to hear instead of each chart term. */
+const MISHEARD: [RegExp, string][] = [
+  // Acronyms come back spelled out, or as the words they sound like.
+  [/\b(?:r\s*s\s*i|are\s*s\s*i|are size|rsl|rs eye)\b/g, "rsi"],
+  [/\b(?:e\s*m\s*a|emma|ima|e ma|email)\b/g, "ema"],
+  [/\b(?:m\s*a\s*c\s*d|mac d)\b/g, "macd"],
+  // Chart vocabulary that sounds like common words.
+  [/\b(?:vall?\s*you\s*m|value m|val um|volumn)\b/g, "volume"],
+  [/\bclosing (?:prize|price is|prices)\b/g, "closing price"],
+  [/\b(?:clothing|closin|closer) price\b/g, "closing price"],
+  [/\bopening (?:prize|prices)\b/g, "opening price"],
+  [/\b(?:loan|lo|law)\b/g, "low"],
+  [/\b(?:hi|height|hive)\b/g, "high"],
+  [/\brelative (?:vall?\s*you\s*m|value|volumn)\b/g, "relative volume"],
+  [/\bexponential (?:moving|move in) averages?\b/g, "exponential moving average"],
+  [/\brelative strength index(?:es)?\b/g, "relative strength index"],
+  // Numbers spoken as words, for the periods indicators need.
+  [/\bfourteen\b/g, "14"], [/\btwenty one\b/g, "21"], [/\btwenty-one\b/g, "21"],
+  [/\btwenty\b/g, "20"], [/\bfifty\b/g, "50"], [/\bnine\b/g, "9"],
+  [/\btwo hundred\b/g, "200"], [/\bone hundred\b/g, "100"],
+];
+
+/**
+ * Repairs a spoken question enough for the patterns below to recognise it.
+ *
+ * Only rewrites vocabulary, never structure, so a question that means
+ * something else after correction was already unanswerable before it.
+ */
+export function correctHearing(question: string): string {
+  let corrected = question;
+  for (const [heard, term] of MISHEARD) corrected = corrected.replace(heard, term);
+  return corrected.replace(/\s+/g, " ").trim();
+}
+
 export function parseQuestionIntent(text: string): Intent {
   // Speech arrives contracted and conversational. Normalising here, before any
   // matching, keeps the concept and expression paths below working from one
@@ -243,13 +277,19 @@ export function parseQuestionIntent(text: string): Intent {
   // be", so the advice test names the actions being sought instead.
   if (/\b(buy|sell|trade|trading|recommend|advice|long|short|profit|entry|exit|position|stop loss|take profit)\b/.test(question)
     || /\bshould (?:i|we|you)\b/.test(question) || /\b(enter|entering)\b/.test(question)) return { kind: "refusal", reason: "advice" };
+  // Speech recognition hears trading vocabulary as ordinary words, and spells
+  // acronyms out letter by letter. Correcting here rather than listing every
+  // mishearing as its own metric keeps the table about meaning, not phonetics.
+  // Deliberately after the refusals above: a correction must never turn a
+  // question this coach declines into one it answers.
+  const corrected = correctHearing(question);
   const concepts: Record<string, "ema" | "rsi" | "relative_volume" | "invalidation"> = {
     ema: "ema", "exponential moving average": "ema", rsi: "rsi", "relative strength index": "rsi",
     "relative volume": "relative_volume", invalidation: "invalidation",
   };
-  const concept = /^(?:what is|explain|define) (?:the |an? )?(.+)$/.exec(question);
+  const concept = /^(?:what is|explain|define) (?:the |an? )?(.+)$/.exec(corrected);
   if (concept && concepts[concept[1]!]) return { kind: "concept", concept: concepts[concept[1]!]! };
-  const expression = question.replace(/^(?:(?:what is|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
+  const expression = corrected.replace(/^(?:(?:what is|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
     .replace(/^(?:the |a |an )/, "").replace(/^current /, "")
     .replace(/ (?:for |of )?(?:the )?(?:selected|latest) (?:candle|bar)$/, "").replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
   const indicator = /^(ema|exponential moving average|rsi|relative strength index|relative volume)(?: over| period)? (\d+)(?: bars| periods)?$/.exec(expression);
