@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "frontend"
   ],
   "scripts": {
     "start": "node --env-file-if-exists=.env apps/api/dist/main.js",
