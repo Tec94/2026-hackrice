@@ -36,7 +36,7 @@ export function HeroChart() {
   const gridPrices = [108.57, 106.09, 103.61, 101.13, 98.65];
 
   return (
-    <div className="rounded-xl2 border border-line bg-panel p-3 shadow-lift sm:p-4">
+    <div className="surface animate-rise-in rounded-xl2 bg-panel p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <span className="rounded-md border border-accent-500/45 px-2.5 py-1 text-micro font-medium text-accent-300">
           Illustrative preview

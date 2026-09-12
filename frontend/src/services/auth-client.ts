@@ -47,7 +47,7 @@ export async function signOut(): Promise<void> {
 
 /** Returns the signed-in user, or null when there is no valid session. */
 export async function getSession(): Promise<AuthUser | null> {
-  const response = await fetch("/api/auth/get-session", { credentials: "include" });
+  const response = await fetch("/api/auth/get-session", { credentials: "include", cache: "no-store" });
   if (!response.ok) return null;
   const data = (await response.json().catch(() => null)) as { user?: AuthUser } | null;
   return data?.user ?? null;

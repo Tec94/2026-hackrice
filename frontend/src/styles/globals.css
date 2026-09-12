@@ -3,6 +3,27 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --border-hairline: 0.5px;
+    --shadow-inner: inset 0 1px 2px rgb(255 255 255 / 0.06);
+    --shadow-contact: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-ambient: 0 8px 30px -12px rgb(0 0 0 / 0.7);
+    --shadow-surface: var(--shadow-inner), var(--shadow-contact), var(--shadow-ambient);
+
+    /* Preserve the existing interaction timings, now named by purpose. */
+    --motion-feedback: 150ms;
+    --motion-state: 200ms;
+    --motion-enter: 350ms;
+    --motion-cycle: 1600ms;
+    --ease-settle: cubic-bezier(0.25, 1, 0.5, 1);
+    --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    --space-related: 0.5rem;
+    --space-group: 1rem;
+    --space-section: 1.5rem;
+    --page-gutter: 1.5rem;
+    --page-width: 88rem;
+  }
+
   html {
     color-scheme: dark;
   }
@@ -23,6 +44,7 @@
 
   /* A restrained scrollbar; the default light one breaks the dark surface. */
   * {
+    overscroll-behavior: none;
     scrollbar-width: thin;
     scrollbar-color: theme("colors.raised") transparent;
   }
@@ -38,15 +60,58 @@
     *,
     *::before,
     *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
+      animation: none !important;
+      transition: none !important;
       scroll-behavior: auto !important;
     }
   }
 }
 
 @layer components {
+  .surface {
+    @apply border-line shadow-surface;
+    border-width: var(--border-hairline);
+  }
+
+  .control-surface {
+    @apply shadow-surface;
+    border: var(--border-hairline) solid rgb(255 255 255 / 0.1);
+  }
+
+  .motion-control,
+  .motion-card {
+    transition-property: transform, background-color, color, border-color;
+    transition-duration: var(--motion-feedback);
+    transition-timing-function: var(--ease-settle);
+  }
+
+  .motion-card {
+    transition-duration: var(--motion-state);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .motion-control:active:not(:disabled) { transform: translateY(1px); }
+    @media (hover: hover) and (pointer: fine) {
+      .motion-card:hover:not(:disabled) { transform: translateY(-2px); }
+    }
+  }
+
+  .page-shell {
+    width: 100%;
+    max-width: var(--page-width);
+    margin-inline: auto;
+    padding-inline: var(--page-gutter);
+  }
+
+  .section-space { padding-block: clamp(4rem, 6vw, 6rem); }
+  .replay-shell { height: 100vh; height: 100dvh; }
+  .analysis-form label { display: grid; gap: var(--space-related); }
+
+  @media (max-width: 639px) {
+    :root { --page-gutter: 1rem; }
+    .landing-nav { gap: var(--space-related); }
+  }
+
   .skip-link {
     @apply absolute left-4 top-4 z-50 -translate-y-24 rounded-lg bg-ink px-4 py-2
            text-base font-medium text-[#0a0a0a] focus:translate-y-0;

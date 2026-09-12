@@ -260,6 +260,136 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
     }
   });
 
+  await t.test("same-session voice connections isolate audio, command errors, cancellation, and playback acknowledgements", async (t) => {
+    const voiceSession = await create(alice);
+    const voiceSnapshot = await context(alice, voiceSession);
+    const address = app.server.address();
+    const url = `ws://127.0.0.1:${address.port}/api/sessions/${voiceSession.id}/events`;
+    const turns = new Map();
+    t.mock.method(app.realtime.provider, "start", (binding) => {
+      const turn = { binding, input: [], stopped: false, cancelled: false };
+      turns.set(binding.turnId, turn);
+      return { status: "connecting", ready: Promise.resolve(true),
+        sendAudio: (pcm) => { turn.input.push(Buffer.from(pcm)); return true; },
+        stop: () => { turn.stopped = true; },
+        cancel: () => app.realtime.provider.cancel(binding.turnId),
+      };
+    });
+    t.mock.method(app.realtime.provider, "cancel", (turnId) => {
+      const turn = turns.get(turnId);
+      if (!turn || turn.cancelled) return;
+      turn.cancelled = true;
+      void app.realtime.onProviderEvent(turn.binding, { type: "cancelled" });
+    });
+    function connect() {
+      const socket = new WebSocket(url, { headers: { cookie: alice.cookie, origin } });
+      const messages = [];
+      const waiting = new Set();
+      socket.on("message", (bytes, binary) => {
+        const event = binary ? { type: "audio", ...C.decodeAudioFrame(bytes) }
+          : C.ServerEvent.parse(JSON.parse(bytes.toString()));
+        messages.push(event);
+        for (const waiter of waiting) if (waiter.predicate(event)) {
+          waiting.delete(waiter);
+          waiter.resolve(event);
+        }
+      });
+      socket.on("error", (error) => { for (const waiter of waiting) waiter.reject(error); });
+      socket.on("close", () => { for (const waiter of waiting) waiter.reject(new Error("Voice test socket closed before its event")); });
+      const waitFor = (predicate, after = 0) => {
+        const existing = messages.slice(after).find(predicate);
+        return existing ? Promise.resolve(existing) : new Promise((resolve, reject) => waiting.add({ predicate, resolve, reject }));
+      };
+      const send = (event) => socket.send(JSON.stringify({ protocolVersion: 1, eventId: randomUUID(), sessionId: voiceSession.id, ...event }));
+      // A resume response proves preceding commands have passed through the server's command queue.
+      const flush = async () => {
+        const marker = messages.find((event) => event.type === "session.ready");
+        const after = messages.length;
+        send({ type: "session.resume", afterSequence: 0 });
+        await waitFor((event) => event.eventId === marker.eventId, after);
+      };
+      return { socket, messages, waitFor, send, flush };
+    }
+    const first = connect();
+    const second = connect();
+    try {
+      const ready = await Promise.all([first, second].map((client) => client.waitFor((event) => event.type === "session.ready")));
+      assert.ok(ready.every((event) => event.sessionId === voiceSession.id));
+      const firstTurnId = randomUUID();
+      const secondTurnId = randomUUID();
+      for (const [client, turnId] of [[first, firstTurnId], [second, secondTurnId]]) {
+        client.send({ type: "voice.start", turnId, chartSnapshotId: voiceSnapshot.id, format: ready[0].inputFormat });
+      }
+      const started = await Promise.all([[first, firstTurnId], [second, secondTurnId]].map(([client, turnId]) =>
+        client.waitFor((event) => event.type === "voice.ready" && event.turnId === turnId || event.type === "session.error")));
+      assert.ok(started.every((event) => event.type === "voice.ready"), JSON.stringify(started));
+      assert.equal(turns.size, 2);
+      assert.ok([...turns.values()].every((turn) => turn.binding.sessionId === voiceSession.id && turn.binding.chartSnapshotId === voiceSnapshot.id));
+
+      let after = first.messages.length;
+      first.send({ type: "voice.start", turnId: randomUUID(), chartSnapshotId: voiceSnapshot.id, format: ready[0].inputFormat });
+      assert.equal((await first.waitFor((event) => event.type === "session.error", after)).error.code, "state_conflict");
+      assert.equal(turns.size, 2, "Each connection still owns at most one active turn");
+      after = first.messages.length;
+      first.socket.send("malformed JSON");
+      assert.equal((await first.waitFor((event) => event.type === "session.error", after)).error.code, "invalid_request");
+
+      const firstPcm = Buffer.from([1, 0]);
+      const secondPcm = Buffer.from([2, 0]);
+      first.socket.send(C.encodeAudioFrame(firstTurnId, firstPcm));
+      second.socket.send(C.encodeAudioFrame(secondTurnId, secondPcm));
+      await Promise.all([first.flush(), second.flush()]);
+      assert.deepEqual(turns.get(firstTurnId).input, [firstPcm]);
+      assert.deepEqual(turns.get(secondTurnId).input, [secondPcm]);
+      after = first.messages.length;
+      first.socket.send(C.encodeAudioFrame(secondTurnId, firstPcm));
+      assert.equal((await first.waitFor((event) => event.type === "session.error", after)).error.code, "state_conflict");
+      assert.deepEqual(turns.get(secondTurnId).input, [secondPcm]);
+
+      for (const [turnId, pcm] of [[firstTurnId, firstPcm], [secondTurnId, secondPcm]]) {
+        await app.realtime.onProviderEvent(turns.get(turnId).binding, { type: "audio_start", format: ready[0].outputFormat });
+        await app.realtime.onProviderEvent(turns.get(turnId).binding, { type: "audio", pcm });
+      }
+      assert.deepEqual(Buffer.from((await first.waitFor((event) => event.type === "audio")).pcm), firstPcm);
+      assert.deepEqual(Buffer.from((await second.waitFor((event) => event.type === "audio")).pcm), secondPcm);
+      first.send({ type: "voice.cancel", turnId: secondTurnId });
+      await first.flush();
+      assert.equal(turns.get(secondTurnId).cancelled, false, "Another connection cannot cancel this turn");
+      first.send({ type: "voice.cancel", turnId: firstTurnId });
+      await first.waitFor((event) => event.type === "assistant.cancelled" && event.turnId === firstTurnId);
+      assert.equal(turns.get(firstTurnId).cancelled, true);
+      assert.equal(turns.get(secondTurnId).cancelled, false);
+      await app.realtime.onProviderEvent(turns.get(firstTurnId).binding, { type: "audio", pcm: firstPcm });
+      second.send({ type: "voice.stop", turnId: secondTurnId });
+      await second.flush();
+      assert.equal(turns.get(firstTurnId).stopped, false);
+      assert.equal(turns.get(secondTurnId).stopped, true);
+      assert.deepEqual(first.messages.filter((event) => event.type === "audio").map((event) => event.turnId), [firstTurnId]);
+      assert.deepEqual(second.messages.filter((event) => event.type === "audio").map((event) => event.turnId), [secondTurnId]);
+      assert.equal(second.messages.some((event) => event.type === "session.error"), false, "Another connection's command errors cannot fail this turn, even on resume");
+
+      const binding = turns.get(secondTurnId).binding;
+      await app.realtime.onProviderEvent(binding, { type: "final_transcript", text: "close" });
+      await app.realtime.onProviderEvent(binding, { type: "response", reply: { kind: "refusal", reason: "unsupported" } });
+      await app.realtime.onProviderEvent(binding, { type: "generated" });
+      await second.waitFor((event) => event.type === "assistant.completed" && event.turnId === secondTurnId && event.delivery === "partial");
+      first.send({ type: "assistant.playback.completed", turnId: secondTurnId });
+      await first.flush();
+      let history = C.History.parse(status(await request(alice.cookie, "GET", `/api/sessions/${voiceSession.id}/history`), 200));
+      assert.equal(history.turns.find((turn) => turn.id === secondTurnId).audioDelivery, "partial");
+      second.send({ type: "assistant.playback.completed", turnId: secondTurnId });
+      await second.waitFor((event) => event.type === "assistant.completed" && event.turnId === secondTurnId && event.delivery === "completed");
+      history = C.History.parse(status(await request(alice.cookie, "GET", `/api/sessions/${voiceSession.id}/history`), 200));
+      assert.equal(history.turns.find((turn) => turn.id === secondTurnId).audioDelivery, "completed");
+      assert.equal(history.turns.find((turn) => turn.id === firstTurnId).status, "cancelled");
+      assert.ok(history.turns.every((turn) => turn.chartSnapshotId === voiceSnapshot.id));
+      assertBlind(history);
+    } finally {
+      first.socket.terminate();
+      second.socket.terminate();
+    }
+  });
+
   await t.test("only provider-confirmed devnet state unlocks immutable submission reveal", async () => {
     submittedKey = randomUUID();
     submission = { chartSnapshotId: snapshot.id, thesis: "A synthetic chart exercise", prediction: "higher",

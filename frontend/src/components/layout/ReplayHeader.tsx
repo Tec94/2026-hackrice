@@ -120,7 +120,7 @@ export function ReplayHeader({
             <User size={18} strokeWidth={1.75} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-full z-30 mt-1 w-48 animate-rise-in rounded-xl2 bg-panel p-1 shadow-lift ring-1 ring-inset ring-line">
+            <div className="surface absolute right-0 top-full z-30 mt-1 w-48 animate-rise-in rounded-xl2 bg-panel p-1">
               {[
                 { href: "/", label: "Markets", Icon: LayoutDashboard },
                 { href: "/history", label: "Session history", Icon: History },

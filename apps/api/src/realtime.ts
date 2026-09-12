@@ -13,7 +13,7 @@ export class Realtime {
   readonly wss = new WebSocketServer({ noServer: true });
   readonly provider: ReturnType<typeof createVoiceProvider>;
   private active = new Map<string, Live>();
-  private clients = new Map<WebSocket, { userId: string; sessionId: string; sequence: number }>();
+  private clients = new Map<WebSocket, { userId: string; sessionId: string; sequence: number; commandErrors: Set<string>; playbackTurns: Set<string> }>();
   private queues = new Map<string, Promise<void>>();
   constructor(public service: ReplayService, private recordings: Recordings, public format: z.infer<typeof C.AudioFormat>, config?: VoiceConfig) {
     this.provider = createVoiceProvider({ config,
@@ -37,7 +37,10 @@ export class Realtime {
     for (const [socket, client] of this.clients) {
       if (client.userId !== userId || client.sessionId !== sessionId || socket.readyState !== WebSocket.OPEN) continue;
       for (const event of state.events) if (event.sequence > client.sequence) {
-        socket.send(JSON.stringify(C.ServerEvent.parse(event)));
+        // Command failures belong to the requesting connection, including during replay.
+        if (event.type !== "session.error" || event.turnId || client.commandErrors.has(event.eventId)) {
+          socket.send(JSON.stringify(C.ServerEvent.parse(event)));
+        }
         client.sequence = event.sequence;
       }
     }
@@ -71,6 +74,9 @@ export class Realtime {
         } else if (event.type === "generated") {
           turn.status = turn.finalTranscript ? "completed" : "failed";
           turn.audioDelivery = live?.sentAudio ? "partial" : "none";
+          if (turn.status === "completed" && turn.audioDelivery === "partial" && live) {
+            this.clients.get(live.socket)?.playbackTurns.add(binding.turnId);
+          }
           appendEvent(state, { type: "assistant.completed", turnId: binding.turnId, delivery: turn.audioDelivery });
         } else if (event.type === "unavailable") {
           turn.status = "failed";
@@ -91,13 +97,16 @@ export class Realtime {
   }
 
   async attach(socket: WebSocket, userId: string, sessionId: string) {
-    this.clients.set(socket, { userId, sessionId, sequence: 0 });
+    this.clients.set(socket, { userId, sessionId, sequence: 0, commandErrors: new Set(), playbackTurns: new Set() });
     const session = (await this.service.store.read(userId, sessionId)).public;
     await this.emit(userId, sessionId, { type: "session.ready", session, inputFormat: this.format, outputFormat: this.format });
     socket.on("message", (data: RawData, binary: boolean) => {
       const queue = (this.queues.get(sessionId) ?? Promise.resolve()).then(() => this.handle(socket, userId, sessionId, data, binary)).catch(async (error) => {
         const code = error instanceof ApiFailure ? error.code : "invalid_request";
-        await this.emit(userId, sessionId, { type: "session.error", error: { code, requestId: randomUUID() } }).catch(() => {});
+        await this.service.store.update(userId, sessionId, (state) => {
+          const event = appendEvent(state, { type: "session.error", error: { code, requestId: randomUUID() } });
+          this.clients.get(socket)?.commandErrors.add(event.eventId);
+        }).then(() => this.broadcast(userId, sessionId)).catch(() => {});
       });
       this.queues.set(sessionId, queue);
       void queue.finally(() => { if (this.queues.get(sessionId) === queue) this.queues.delete(sessionId); });
@@ -132,6 +141,7 @@ export class Realtime {
       await this.service.question(userId, sessionId, { chartSnapshotId: event.chartSnapshotId, text: event.text }, event.eventId, event.turnId);
       await this.broadcast(userId, sessionId); return;
     }
+    if (event.type === "assistant.playback.completed" && !this.clients.get(socket)?.playbackTurns.has(event.turnId)) return;
     const duplicate = await this.service.store.update(userId, sessionId, (s) => {
       if (s.clientCommands.includes(event.eventId)) return true;
       s.clientCommands.push(event.eventId); return false;
@@ -144,13 +154,14 @@ export class Realtime {
         turn.audioDelivery = "completed";
         appendEvent(s, { type: "assistant.completed", turnId: turn.id, delivery: "completed" });
       });
+      this.clients.get(socket)?.playbackTurns.delete(event.turnId);
       await this.broadcast(userId, sessionId); return;
     }
     if (event.type === "voice.start") {
       this.service.assertBlind(state);
       this.service.snapshot(state, event.chartSnapshotId);
       if (event.format.sampleRateHz !== this.format.sampleRateHz) throw new ApiFailure("invalid_request", 400);
-      if ([...this.active.values()].some((l) => l.binding.sessionId === sessionId && l.active)) throw new ApiFailure("state_conflict", 409);
+      if ([...this.active.values()].some((l) => l.socket === socket && l.active)) throw new ApiFailure("state_conflict", 409);
       if (state.turns.some((t) => t.id === event.turnId)) throw new ApiFailure("idempotency_conflict", 409);
       const recordingId = randomUUID();
       const binding = { userId, sessionId, turnId: event.turnId, chartSnapshotId: event.chartSnapshotId };

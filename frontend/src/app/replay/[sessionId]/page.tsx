@@ -111,7 +111,7 @@ export default function ReplaySessionPage({
   }
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-ground">
+    <div className="replay-shell flex flex-col overflow-hidden bg-ground">
       <a href="#workspace" className="skip-link">
         Skip to chart workspace
       </a>

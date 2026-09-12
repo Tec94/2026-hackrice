@@ -9,7 +9,7 @@ import { cn } from "@/utilities/cn";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-ink text-[#0a0a0a] hover:bg-white shadow-panel",
+  primary: "bg-ink text-[#0a0a0a] hover:bg-white",
   secondary: "bg-raised text-ink hover:bg-line",
   ghost: "bg-transparent text-ink-muted hover:bg-raised hover:text-ink",
   danger: "bg-bear text-white hover:brightness-110",
@@ -26,7 +26,8 @@ export function Button({
       {...props}
       className={cn(
         "inline-flex min-h-touch items-center justify-center gap-2 rounded-lg px-4 text-base font-medium",
-        "transition-[background-color,color,box-shadow] duration-150 motion-reduce:transition-none",
+        "motion-control",
+        variant !== "ghost" && "control-surface",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground",
         "disabled:pointer-events-none disabled:opacity-40",
         BUTTON_VARIANTS[variant],
@@ -49,7 +50,7 @@ export function IconButton({
       title={label}
       className={cn(
         "inline-flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-lg",
-        "text-ink-muted transition-colors duration-150 hover:bg-raised hover:text-ink motion-reduce:transition-none",
+        "motion-control text-ink-muted hover:bg-raised hover:text-ink",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground",
         "disabled:pointer-events-none disabled:opacity-40",
         className,
@@ -63,8 +64,8 @@ export function IconButton({
 /* ---------------------------------- Fields --------------------------------- */
 
 const fieldBase =
-  "w-full rounded-lg bg-raised px-3 py-2 text-base text-ink placeholder:text-ink-faint " +
-  "ring-1 ring-inset ring-line focus:outline-none focus:ring-2 focus:ring-accent-400";
+  "w-full min-w-0 rounded-lg border-hairline border-line bg-raised px-3 py-2 text-base text-ink placeholder:text-ink-faint " +
+  "transition-colors duration-feedback ease-settle focus:outline-none focus:ring-2 focus:ring-accent-400";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...props }, ref) {
@@ -140,7 +141,7 @@ export function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className={cn("rounded-xl2 bg-panel p-4", className)}>
+    <section className={cn("surface rounded-xl2 bg-panel p-4", className)}>
       {(title || action) && (
         <header className="mb-3 flex items-center justify-between gap-2">
           {title && (
@@ -181,10 +182,10 @@ export function ProgressBar({
     >
       <div
         className={cn(
-          "h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none",
+          "h-full w-full origin-left rounded-full transition-transform duration-state ease-settle motion-reduce:transition-none",
           tone === "accent" ? "bg-accent-500" : "bg-replay-500",
         )}
-        style={{ width: `${pct}%` }}
+        style={{ transform: `scaleX(${pct / 100})` }}
       />
     </div>
   );
@@ -337,7 +338,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full max-w-md animate-rise-in rounded-xl2 bg-panel p-5 shadow-lift ring-1 ring-inset ring-line"
+        className="surface relative max-h-full w-full max-w-md animate-rise-in overflow-y-auto rounded-xl2 bg-panel p-5"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -393,9 +394,9 @@ export function Tabs<T extends string>({
           tabIndex={active === tab.id ? 0 : -1}
           onClick={() => onChange(tab.id)}
           className={cn(
-            "min-h-touch flex-1 rounded-md px-3 text-base font-medium transition-colors duration-150 motion-reduce:transition-none",
+            "motion-control min-h-touch flex-1 rounded-md px-3 text-base font-medium",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400",
-            active === tab.id ? "bg-raised text-ink shadow-panel" : "text-ink-faint hover:text-ink",
+            active === tab.id ? "bg-raised text-ink shadow-surface" : "text-ink-faint hover:text-ink",
           )}
         >
           {tab.label}

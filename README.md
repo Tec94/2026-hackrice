@@ -40,6 +40,9 @@ the runtime does not contain a fake-confirmation bypass.
 
 ## Integration and deployment
 
+For UI polish, open `/design-system` and read the
+[design and motion guide](docs/design-system.md).
+
 Read [the frontend API guide](docs/backend-api.md) for authentication, requests,
 voice frames, playback acknowledgments, examples, and error handling. Read
 [the design](docs/backend-design.md) for the safety boundary and source evidence.
