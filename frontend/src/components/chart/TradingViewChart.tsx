@@ -360,6 +360,18 @@ export function TradingViewChart({
       }
     });
 
+    // Oscillators each need their own horizontal band, or they overlap each
+    // other and the volume histogram. Lay them out bottom-up in enable order.
+    const oscillators = indicators.filter((id) => indicatorDef(id)?.pane === "separate");
+    const laneFor = (id: string) => {
+      const index = oscillators.indexOf(id);
+      if (index === -1) return null;
+      // Volume occupies the lowest band; oscillators stack above it.
+      const height = 0.14;
+      const bottom = 0.2 + index * (height + 0.03);
+      return { top: 1 - bottom - height, bottom };
+    };
+
     // Add any newly enabled.
     for (const id of indicators) {
       if (live.has(id)) continue;
@@ -381,11 +393,24 @@ export function TradingViewChart({
         return line;
       });
 
-      if (def.pane === "separate") {
-        chart.priceScale(`pane-${id}`).applyOptions({ scaleMargins: { top: 0.78, bottom: 0.02 } });
+      const lane = laneFor(id);
+      if (def.pane === "separate" && lane) {
+        chart.priceScale(`pane-${id}`).applyOptions({ scaleMargins: lane });
       }
       live.set(id, created);
     }
+
+    // Reflow: adding or removing an oscillator shifts every lane below it, and
+    // the price/volume scales must give up room for the stack.
+    for (const id of oscillators) {
+      const lane = laneFor(id);
+      if (lane) chart.priceScale(`pane-${id}`).applyOptions({ scaleMargins: lane });
+    }
+    const stackTop = oscillators.length ? 1 - (0.2 + oscillators.length * 0.17) : 0.74;
+    chart.priceScale("right").applyOptions({
+      scaleMargins: { top: 0.08, bottom: Math.max(0.2, 1 - stackTop) },
+    });
+    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
   }, [indicators, ready]);
 
   /* -------------------------------- drawings ------------------------------- */
