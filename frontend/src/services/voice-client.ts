@@ -35,9 +35,20 @@ type Turn = {
   pendingSamples: number[]; frameSamples: number;
 };
 
-/** One captured chart snapshot and one disposable socket per voice turn. */
+/**
+ * One captured chart snapshot and one disposable socket per voice turn.
+ *
+ * The audio context and the microphone stream are not per turn. Both are
+ * acquired in the click that opens the conversation and kept until it ends:
+ * a turn that begins from a callback cannot ask for either again without a
+ * gesture in some browsers, and releasing a Bluetooth microphone between
+ * turns makes the headset switch profiles, which is slow and sometimes fails.
+ */
 export class VoiceClient {
   private turn?: Turn;
+  private context?: AudioContext;
+  private stream?: MediaStream;
+  private worklet?: Promise<void>;
   private sessionId: string;
   private callbacks: Callbacks;
   constructor(sessionId: string, callbacks: Callbacks) { this.sessionId = sessionId; this.callbacks = callbacks; }
@@ -74,8 +85,9 @@ export class VoiceClient {
       this.callbacks.error('Microphone capture needs a supported browser on localhost or HTTPS.');
       return;
     }
-    // Resume in the user's click gesture; never rely on autoplay permission.
-    const context = new AudioContext();
+    // Created in the user's click gesture on the first turn and reused after;
+    // never rely on autoplay permission.
+    const context = this.context ?? (this.context = new AudioContext());
     const turn: Turn = { id: crypto.randomUUID(), context, sources: new Set(), nextStart: 0,
       generated: false, approved: false, audioStarted: false, listening: false, lastSequence: -1, sentStart: false, pendingSamples: [], frameSamples: 0 };
     this.turn = turn;
@@ -83,10 +95,12 @@ export class VoiceClient {
     try {
       const resumed = context.resume();
       void resumed.catch(() => {}); // Awaited below, including browsers that reject autoplay.
-      const media = navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      const stream = this.stream?.active
+        ? this.stream
+        : await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
       // Always reclaim a late permission grant after cancellation/unmount.
-      const stream = await media;
-      if (this.turn !== turn) { stream.getTracks().forEach(t => t.stop()); return; }
+      if (this.turn !== turn) { if (stream !== this.stream) stream.getTracks().forEach(t => t.stop()); return; }
+      this.stream = stream;
       turn.stream = stream;
       await resumed;
       const snapshot = await capture();
@@ -142,7 +156,7 @@ export class VoiceClient {
       // this MVP's per-frame database authorization and recording work.
       // https://developers.deepgram.com/docs/measuring-streaming-latency
       turn.frameSamples = message.inputFormat.sampleRateHz / 10;
-      await turn.context.audioWorklet.addModule('/audio-capture.js');
+      await this.captureWorklet(turn.context);
       if (this.turn !== turn) return;
       const worklet = new AudioWorkletNode(turn.context, 'chart-capture', {
         processorOptions: { targetRate: message.inputFormat.sampleRateHz },
@@ -208,11 +222,27 @@ export class VoiceClient {
     catch (error) { this.fail(turn, error); }
   }
 
+  /** Loaded once per audio context; registering the processor twice would throw. */
+  private captureWorklet(context: AudioContext): Promise<void> {
+    return this.worklet ??= context.audioWorklet.addModule('/audio-capture.js');
+  }
+
+  /** Stops sending audio for this turn. The stream stays open for the next one. */
   private stopMicrophone(turn: Turn) {
     turn.listening = false;
-    turn.stream?.getTracks().forEach(track => track.stop());
     turn.input?.disconnect(); turn.worklet?.disconnect();
     if (turn.worklet) { turn.worklet.port.onmessage = null; turn.worklet.port.close(); }
+  }
+
+  /** Ends the conversation: cancels any turn and releases the microphone and audio output. */
+  close() {
+    this.cancel();
+    this.stream?.getTracks().forEach(track => track.stop());
+    this.stream = undefined;
+    this.worklet = undefined;
+    const context = this.context;
+    this.context = undefined;
+    void context?.close().catch(() => {});
   }
 
   private finishPlayback(turn: Turn) {
@@ -247,7 +277,6 @@ export class VoiceClient {
     for (const source of turn.sources) { source.onended = null; source.stop(); source.disconnect(); }
     turn.sources.clear();
     if (turn.socket) { turn.socket.onclose = null; turn.socket.onerror = null; turn.socket.onmessage = null; turn.socket.close(); }
-    void turn.context.close().catch(() => {});
     this.callbacks.state('idle');
   }
 }

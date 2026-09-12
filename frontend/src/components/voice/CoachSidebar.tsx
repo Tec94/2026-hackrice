@@ -83,8 +83,10 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
       error: message => {
         setError(message);
         // The client disposes the turn on failure, so nothing is listening;
-        // end the conversation rather than leaving a dead "open" state.
+        // end the conversation rather than leaving a dead "open" state, and
+        // give the microphone back.
         setConversing(false);
+        client.close();
       },
       complete: () => {
         void loadHistory().then(() => { setVoiceTranscript(""); setVoiceAnswer(""); }).catch(() => setError("Could not refresh voice history."));
@@ -95,12 +97,12 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
       },
     });
     voice.current = client;
-    return () => { mounted.current = false; abort.abort(); client.cancel(); voice.current = null; };
+    return () => { mounted.current = false; abort.abort(); client.close(); voice.current = null; };
   }, [sessionId, loadHistory, applyDraft]);
 
   /** A submitted session ends the conversation rather than re-arming into it. */
   useEffect(() => {
-    if (disabled && conversing) { setConversing(false); voice.current?.cancel(); }
+    if (disabled && conversing) { setConversing(false); voice.current?.close(); }
   }, [disabled, conversing]);
 
   const begin = () => {
@@ -111,7 +113,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
     // play audio; every later turn inherits that permission.
     void voice.current?.start(captureContext);
   };
-  const end = () => { setConversing(false); voice.current?.cancel(); };
+  const end = () => { setConversing(false); voice.current?.close(); };
 
   const voiceActive = voiceState !== "idle";
   const run = async (work: () => Promise<void>) => {
