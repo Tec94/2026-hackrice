@@ -8,7 +8,7 @@ import type { Config } from "tailwindcss";
  *   raised  inputs, hover states, the only third level
  *
  * Boundaries are mostly a background shift; `line` is reserved for the few
- * places a real rule is needed. Accent is a single indigo ramp; amber marks
+ * places a real rule is needed. Accent is a single amber ramp; amber marks
  * replay/future notices; bull/bear are supplemental to text, never alone.
  */
 const config: Config = {
@@ -70,6 +70,9 @@ const config: Config = {
       },
 
       borderRadius: { xl2: "0.875rem" },
+      borderWidth: { hairline: "var(--border-hairline)" },
+      transitionDuration: { feedback: "var(--motion-feedback)", state: "var(--motion-state)" },
+      transitionTimingFunction: { settle: "var(--ease-settle)", enter: "var(--ease-enter)" },
 
       height: { touch: "44px" },
       width: { touch: "44px" },
@@ -79,8 +82,8 @@ const config: Config = {
       gridTemplateColumns: { workspace: "minmax(0,1fr) minmax(340px,26%)" },
 
       boxShadow: {
-        panel: "0 1px 2px rgba(0,0,0,0.4)",
-        lift: "0 8px 30px -12px rgba(0,0,0,0.7)",
+        surface: "var(--shadow-surface)",
+        lift: "var(--shadow-surface)",
         glow: "0 0 0 6px rgba(192,138,51,0.12)",
       },
 
@@ -96,8 +99,8 @@ const config: Config = {
         },
       },
       animation: {
-        "pulse-ring": "pulseRing 1.6s ease-out infinite",
-        "rise-in": "riseIn 0.35s ease-out both",
+        "pulse-ring": "pulseRing var(--motion-cycle) var(--ease-settle) infinite",
+        "rise-in": "riseIn var(--motion-enter) var(--ease-enter) both",
       },
     },
   },

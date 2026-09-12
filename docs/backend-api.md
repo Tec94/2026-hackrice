@@ -1,11 +1,11 @@
-# Run and integrate the backend
+# Backend API and operations
 
 The TypeScript API provides authenticated SOL/USDT replay sessions, deterministic
 chart calculations, private history, controlled voice, learning-memory jobs,
 and Solana devnet receipts. The shared
 [contracts](../packages/contracts/src/index.ts) define JSON validation and event
-types. This guide describes implemented behavior; the
-[design document](backend-design.md) also contains earlier proposals.
+types. This guide is the source of truth for the implemented backend and its
+operational boundaries.
 
 ## Start locally
 
@@ -30,7 +30,8 @@ reimporting the same digest does not duplicate rows. No candles are fabricated
 when the provider is unavailable. A session requires enough complete history
 for the configured indicators and its chosen prediction horizon.
 
-The example configuration serves the API at `http://localhost:3000`.
+The example configuration serves the API at `http://localhost:4000`, while the
+frontend runs at `http://localhost:3000` and proxies API traffic.
 `GET /health` reports the database mode and whether voice playback is enabled.
 The API does not serve a frontend; route frontend requests and WebSocket upgrades
 through the same origin in an integrated deployment.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { safeReturnPath } from "../src/services/auth-client.ts";
+import { getSession, safeReturnPath } from "../src/services/auth-client.ts";
 import { request } from "../src/services/api-client.ts";
 import { createDrawing } from "../src/components/chart/drawings.ts";
 import { rsi } from "../src/components/chart/indicators.ts";
@@ -13,6 +13,23 @@ test("sign-in return paths stay inside the application", () => {
 test("drawings use contract UUIDs and flat RSI agrees with the backend", () => {
   assert.ok(Id.safeParse(createDrawing("horizontal", {time: 1, price: 2}, {time: 1, price: 2}).id).success);
   assert.equal(rsi(Array.from({length: 15}, (_, i) => ({ time: i, close: 10 })), 14)[0].value, 50);
+});
+
+test("account checks use the current same-origin cookie without cached session data", async () => {
+  const original = globalThis.fetch;
+  try {
+    const user = { id: "test-user", name: "Tester", email: "tester@example.com" };
+    let signedIn = true;
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, "/api/auth/get-session");
+      assert.equal(options.credentials, "include");
+      assert.equal(options.cache, "no-store");
+      return Response.json(signedIn ? { user } : null);
+    };
+    assert.deepEqual(await getSession(), user);
+    signedIn = false;
+    assert.equal(await getSession(), null);
+  } finally { globalThis.fetch = original; }
 });
 test("typed requests preserve cookies and mutation idempotency without leaking absolute URLs", async () => {
   const original = globalThis.fetch;

@@ -20,7 +20,7 @@ export const Indicator = z.discriminatedUnion("name", [
   z.strictObject({ name: z.literal("rsi"), period: z.number().int().positive() }),
   z.strictObject({ name: z.literal("relative_volume"), period: z.number().int().positive() }),
 ]);
-// TradingView's published EMA/RSI defaults and ordinary relative-volume definition; see backend-design.md.
+// Indicator definitions and operational boundaries are documented in docs/backend-api.md.
 export const demoIndicators = [
   { name: "ema", period: 9 },
   { name: "rsi", period: 14 },

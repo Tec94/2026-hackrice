@@ -151,7 +151,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
       </div>)}
     </div>
     {error && <div className="mt-3"><ErrorBanner title="Could not continue" message={error} /></div>}
-    <form className="mt-6 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); setSubmitError(null); setConfirming(true); }}>
+    <form className="analysis-form mt-6 space-y-4 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); setSubmitError(null); setConfirming(true); }}>
       <h3 className="text-lead font-semibold text-ink">Your analysis</h3>
       {heard.length > 0 && <p className="text-tiny text-coach">Filled in from what you said: {heard.map(FIELD_LABEL).join(", ")}. Check it, edit anything, then submit.</p>}
       <label className="block text-base text-ink">Thesis<Textarea value={thesis} onChange={e => setThesis(e.target.value)} required /></label>

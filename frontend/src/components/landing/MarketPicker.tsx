@@ -26,7 +26,7 @@ export function MarketPicker() {
       router.push(`/replay/${sessionId}`);
     } catch (e) {
       if (isApiError(e, "unauthenticated")) {
-        router.push("/sign-in?next=%2F");
+        router.push("/sign-in?next=%2F%23markets");
         return;
       }
       setError(
@@ -54,7 +54,7 @@ export function MarketPicker() {
               market.available ? `Start a ${market.label} session` : `${market.label} — coming soon`
             }
             className={cn(
-              "group rounded-xl2 border border-line bg-panel p-5 text-left transition-colors duration-200",
+              "surface motion-card group rounded-xl2 bg-panel p-5 text-left",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400",
               market.available
                 ? "hover:border-accent-500/45 hover:bg-raised"

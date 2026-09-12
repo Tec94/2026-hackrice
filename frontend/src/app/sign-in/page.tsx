@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button, ErrorBanner, Input } from "@/components/ui";
-import { safeReturnPath, signIn, signUp } from "@/services/auth-client";
+import { getSession, safeReturnPath, signIn, signUp } from "@/services/auth-client";
 
 /**
  * `useSearchParams` opts a route out of static prerendering, so the form is
@@ -30,6 +30,17 @@ function SignInForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    void getSession().catch(() => null).then((user) => {
+      if (!mounted) return;
+      if (user) router.replace(next);
+      else setCheckingSession(false);
+    });
+    return () => { mounted = false; };
+  }, [next, router]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -38,7 +49,7 @@ function SignInForm() {
     try {
       if (mode === "sign-up") await signUp(name, email, password);
       else await signIn(email, password);
-      router.push(next);
+      router.replace(next);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Authentication failed.");
@@ -46,6 +57,10 @@ function SignInForm() {
       setBusy(false);
     }
   };
+
+  if (checkingSession) {
+    return <main className="grid min-h-screen place-items-center"><p role="status" className="text-ink-muted">Checking account…</p></main>;
+  }
 
   return (
     <main className="grid min-h-screen place-items-center px-6 py-12">

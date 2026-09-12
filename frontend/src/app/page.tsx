@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { HeroChart } from "@/components/landing/HeroChart";
 import { MarketPicker } from "@/components/landing/MarketPicker";
+import { LandingAccount } from "@/components/landing/LandingAccount";
 
 const NAV = [
   { href: "#how", label: "How it works" },
@@ -47,7 +48,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-ground">
       {/* ------------------------------- Nav ------------------------------- */}
       <header className="sticky top-0 z-30 border-b border-line/70 bg-ground/85 backdrop-blur">
-        <nav className="mx-auto flex h-16 w-full max-w-[88rem] items-center gap-8 px-6">
+        <nav className="page-shell landing-nav flex h-16 items-center gap-8">
           <Link
             href="/"
             className="flex shrink-0 items-center gap-2.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
@@ -69,16 +70,11 @@ export default function LandingPage() {
             ))}
           </ul>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex min-w-0 items-center gap-3">
+            <LandingAccount />
             <Link
-              href="/history"
-              className="hidden min-h-touch items-center px-2 text-base text-ink-muted transition-colors hover:text-ink motion-reduce:transition-none sm:inline-flex"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/sign-in?next=%2F"
-              className="inline-flex min-h-touch items-center rounded-lg bg-ink px-4 text-base font-semibold text-[#0a0a0a] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground motion-reduce:transition-none"
+              href="#markets"
+              className="control-surface motion-control inline-flex min-h-touch shrink-0 items-center rounded-lg bg-ink px-4 text-base font-semibold text-[#0a0a0a] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground"
             >
               Start a session
             </Link>
@@ -88,7 +84,7 @@ export default function LandingPage() {
 
       {/* ------------------------------- Hero ------------------------------ */}
       <main>
-        <section className="mx-auto grid w-full max-w-[88rem] items-center gap-12 px-6 py-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16 lg:py-24">
+        <section className="page-shell section-space grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16">
           <div>
             <span className="inline-flex items-center rounded-full border border-accent-500/45 px-4 py-1.5 text-base text-accent-300">
               Historical replay · no live markets
@@ -108,8 +104,8 @@ export default function LandingPage() {
 
             <div className="mt-9 flex flex-wrap gap-3">
               <Link
-                href="/sign-in?next=%2F"
-                className="inline-flex min-h-touch items-center rounded-lg bg-ink px-6 text-lead font-semibold text-[#0a0a0a] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground motion-reduce:transition-none"
+                href="#markets"
+                className="control-surface motion-control inline-flex min-h-touch items-center rounded-lg bg-ink px-6 text-lead font-semibold text-[#0a0a0a] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground"
               >
                 Start a session
               </Link>
@@ -130,8 +126,8 @@ export default function LandingPage() {
         </section>
 
         {/* ---------------------------- Markets ---------------------------- */}
-        <section className="mx-auto w-full max-w-[88rem] px-6 pb-20" aria-labelledby="markets">
-          <h2 id="markets" className="text-micro uppercase tracking-[0.18em] text-ink-faint">
+        <section className="page-shell pb-20" aria-labelledby="markets">
+          <h2 id="markets" className="scroll-mt-24 text-micro uppercase tracking-[0.18em] text-ink-faint">
             Pick a market
           </h2>
           <div className="mt-5">
@@ -141,7 +137,7 @@ export default function LandingPage() {
 
         {/* --------------------------- How it works ------------------------ */}
         <section id="how" className="border-t border-line/70 bg-panel/40">
-          <div className="mx-auto w-full max-w-[88rem] px-6 py-20">
+          <div className="page-shell section-space">
             <h2 className="text-title font-semibold tracking-tight text-ink">How it works</h2>
             <div className="mt-10 grid gap-10 sm:grid-cols-3">
               {STEPS.map((step) => (
@@ -158,7 +154,7 @@ export default function LandingPage() {
         </section>
 
         {/* ------------------------------ Coach ---------------------------- */}
-        <section id="coach" className="mx-auto w-full max-w-[88rem] px-6 py-20">
+        <section id="coach" className="page-shell section-space">
           <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
             <div>
               <span className="inline-flex items-center gap-2 text-micro uppercase tracking-[0.18em] text-coach-300">
@@ -214,7 +210,7 @@ export default function LandingPage() {
 
         {/* ------------------------------- FAQ ----------------------------- */}
         <section id="faq" className="border-t border-line/70">
-          <div className="mx-auto w-full max-w-[88rem] px-6 py-20">
+          <div className="page-shell section-space">
             <h2 className="text-title font-semibold tracking-tight text-ink">FAQ</h2>
             <dl className="mt-8 grid gap-8 sm:grid-cols-3">
               {FAQ.map((item) => (
@@ -229,7 +225,7 @@ export default function LandingPage() {
 
         {/* ------------------------------- CTA ----------------------------- */}
         <section className="border-t border-line/70 bg-panel/40">
-          <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center justify-between gap-6 px-6 py-16">
+          <div className="page-shell section-space flex flex-wrap items-center justify-between gap-6">
             <div>
               <h2 className="text-title font-semibold tracking-tight text-ink">
                 Find out whether you can actually read one.
@@ -239,8 +235,8 @@ export default function LandingPage() {
               </p>
             </div>
             <Link
-              href="/sign-in?next=%2F"
-              className="inline-flex min-h-touch items-center rounded-lg bg-ink px-6 text-lead font-semibold text-[#0a0a0a] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground motion-reduce:transition-none"
+              href="#markets"
+              className="control-surface motion-control inline-flex min-h-touch items-center rounded-lg bg-ink px-6 text-lead font-semibold text-[#0a0a0a] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2 focus-visible:ring-offset-ground"
             >
               Start a session
             </Link>
@@ -249,7 +245,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="border-t border-line/70">
-        <div className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center gap-x-6 gap-y-2 px-6 py-8 text-base text-ink-faint">
+        <div className="page-shell flex flex-wrap items-center gap-x-6 gap-y-2 py-8 text-base text-ink-faint">
           <span className="flex items-center gap-2 text-ink-muted">
             <span aria-hidden="true" className="h-3.5 w-1 rounded-sm bg-accent-400" />
             Chartroom

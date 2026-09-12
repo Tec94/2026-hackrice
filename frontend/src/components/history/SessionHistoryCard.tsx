@@ -27,7 +27,7 @@ export function SessionHistoryCard({ session }: { session: SessionRow }) {
   return (
     <Link
       href={destination(session)}
-      className="group block rounded-xl2 bg-panel p-4 transition-colors duration-150 hover:bg-raised
+      className="surface motion-card group block rounded-xl2 bg-panel p-4 hover:bg-raised
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 motion-reduce:transition-none"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
