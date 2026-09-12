@@ -253,6 +253,11 @@ export function createVoiceProvider(options: Options) {
             text = "Noted on the analysis form for you to review.";
           } else text = "Nothing new to record yet.";
         } catch { text = "That did not include anything I could record."; }
+        // Every branch above answers with text this server wrote, so the turn
+        // may speak. Without this a learner who only states their analysis,
+        // never asking about the chart, has no approved reply and the audio
+        // gate fails the turn.
+        turn.approved = true;
         if (turn.socket.readyState !== WebSocket.OPEN) return;
         turn.socket.send(JSON.stringify({ type: "FunctionCallResponse", id: call.id, name: call.name, content: text }));
         continue;
