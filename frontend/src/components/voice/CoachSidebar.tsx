@@ -114,14 +114,14 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
               : <Button variant="primary" disabled={busy || disabled} onClick={begin}>Start conversation</Button>}
             {conversing && <p className="text-tiny text-ink-faint">Speak, then pause. The coach replies and listens again automatically.</p>}
           </>}
-      <p className="text-tiny text-ink-faint">Deepgram transcribes your audio; ElevenLabs speaks the approved reply. This app retains raw audio and final transcripts for 30 days or until deletion. Provider retention may differ.</p>
+      <p className="text-tiny text-ink-faint">Answers are spoken, not written, so turn your sound on. Deepgram transcribes your audio; ElevenLabs speaks the approved reply. This app retains raw audio and final transcripts for 30 days or until deletion. Provider retention may differ.</p>
       {voiceTranscript && <p className="text-base text-ink-muted">You: {voiceTranscript}</p>}
-      {voiceAnswer && <p className="text-base text-ink">Coach: {voiceAnswer}</p>}
+      {voiceAnswer && <p className="text-base text-ink-muted">Coach is answering aloud…</p>}
     </section>
     <div className="space-y-3" aria-live="polite">
       {turns.map(t => <div key={t.id} className="rounded-lg bg-raised p-3 text-base">
         <p className="text-ink-muted">You: {t.question ?? "Cancelled voice turn"}</p>
-        {t.answer && <p className="mt-2 text-ink">Coach: {t.answer}</p>}
+        {t.answer && <p className="mt-2 text-tiny text-ink-faint">Answered aloud</p>}
       </div>)}
     </div>
     {error && <div className="mt-3"><ErrorBanner title="Could not continue" message={error} /></div>}
