@@ -6,11 +6,18 @@ import { request } from "@/services/api-client";
 import { Badge, Button, Dialog, ErrorBanner, Input, Select, Textarea } from "@/components/ui";
 import { VoiceClient, type VoiceState } from "@/services/voice-client";
 
+const STATUS: Record<VoiceState, string> = {
+  idle: "Paused",
+  connecting: "Connecting…",
+  listening: "Listening — just talk",
+  thinking: "Thinking…",
+  speaking: "Speaking",
+};
+
 export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   sessionId: string; captureContext: () => Promise<ChartContext>; disabled?: boolean;
 }) {
   const router = useRouter();
-  const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<{ id: string; question?: string; answer?: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,27 +29,67 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   const [evidence, setEvidence] = useState("");
   const [invalidation, setInvalidation] = useState("");
   const [risk, setRisk] = useState("");
-  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceEnabled, setVoiceEnabled] = useState(false);
-  const [voiceTranscript, setVoiceTranscript] = useState('');
-  const [voiceAnswer, setVoiceAnswer] = useState('');
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceAnswer, setVoiceAnswer] = useState("");
+  /** True once the user has opened the conversation; turns then chain themselves. */
+  const [conversing, setConversing] = useState(false);
   const voice = useRef<VoiceClient | null>(null);
+  const mounted = useRef(true);
+  /** Read inside the `complete` callback, which closes over its first render. */
+  const latest = useRef({ conversing: false, disabled, capture: captureContext });
+  latest.current = { conversing, disabled, capture: captureContext };
+
   const loadHistory = useCallback(async () => {
     const history = await request("getHistory", { params: { sessionId } });
     setTurns(history.turns.map(t => ({ id: t.id, question: t.finalTranscript, answer: t.reply ? renderSafeReply(t.reply) : undefined })));
   }, [sessionId]);
   useEffect(() => { void loadHistory().catch(() => setError("Could not load the conversation.")); }, [loadHistory]);
+
   useEffect(() => {
+    mounted.current = true;
     const abort = new AbortController();
-    void fetch('/health', { signal: abort.signal }).then(r => { if (!r.ok) throw new Error('Health unavailable'); return r.json(); }).then(data => setVoiceEnabled(data.voiceEnabled === true)).catch(() => {});
+    void fetch("/health", { signal: abort.signal }).then(r => { if (!r.ok) throw new Error("Health unavailable"); return r.json(); }).then(data => setVoiceEnabled(data.voiceEnabled === true)).catch(() => {});
     const client = new VoiceClient(sessionId, {
-      state: setVoiceState, transcript: setVoiceTranscript, answer: setVoiceAnswer, error: setError,
-      complete: () => { void loadHistory().then(() => { setVoiceTranscript(''); setVoiceAnswer(''); }).catch(() => setError('Could not refresh voice history.')); },
+      state: setVoiceState,
+      transcript: setVoiceTranscript,
+      answer: setVoiceAnswer,
+      // A failed turn must not re-arm: that would hammer getUserMedia.
+      error: message => {
+        setError(message);
+        // The client disposes the turn on failure, so nothing is listening;
+        // end the conversation rather than leaving a dead "open" state.
+        setConversing(false);
+      },
+      complete: () => {
+        void loadHistory().then(() => { setVoiceTranscript(""); setVoiceAnswer(""); }).catch(() => setError("Could not refresh voice history."));
+        // The coach has finished speaking; open the microphone for the reply.
+        // `dispose()` already cleared the previous turn, so `start()` is free.
+        const { conversing: on, disabled: off, capture } = latest.current;
+        if (mounted.current && on && !off) void client.start(capture);
+      },
     });
     voice.current = client;
-    return () => { abort.abort(); client.cancel(); voice.current = null; };
+    return () => { mounted.current = false; abort.abort(); client.cancel(); voice.current = null; };
   }, [sessionId, loadHistory]);
-  const voiceActive = voiceState !== 'idle';
+
+  /** A submitted session ends the conversation rather than re-arming into it. */
+  useEffect(() => {
+    if (disabled && conversing) { setConversing(false); voice.current?.cancel(); }
+  }, [disabled, conversing]);
+
+  const begin = () => {
+    setError(null);
+    setVoiceTranscript(""); setVoiceAnswer("");
+    setConversing(true);
+    // The first turn starts inside this click so the AudioContext is allowed to
+    // play audio; every later turn inherits that permission.
+    void voice.current?.start(captureContext);
+  };
+  const end = () => { setConversing(false); voice.current?.cancel(); };
+
+  const voiceActive = voiceState !== "idle";
   const run = async (work: () => Promise<void>) => {
     setBusy(true); setError(null);
     try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "Request failed. Please try again."); }
@@ -50,20 +97,23 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
   };
   return <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-panel p-5">
     <header className="mb-4">
-      <div className="flex items-center justify-between gap-2"><h2 className="text-base font-semibold text-ink">Chart coach</h2><Badge>{busy ? "Working" : "Text ready"}</Badge></div>
-      <p className="mt-2 text-tiny text-ink-muted">Ask for calculations from the visible chart. You draw your own conclusions.</p>
-      <p className="mt-2 text-tiny text-ink-faint">{voiceEnabled ? 'Start the microphone, wait for Listening, then speak. Stop and send when finished.' : 'Voice integration is installed. Live playback validation must pass on the backend before the microphone is enabled.'}</p>
+      <div className="flex items-center justify-between gap-2"><h2 className="text-base font-semibold text-ink">Chart coach</h2><Badge>{conversing ? STATUS[voiceState] : voiceEnabled ? "Ready" : "Voice unavailable"}</Badge></div>
+      <p className="mt-2 text-tiny text-ink-muted">Talk through the chart out loud. Ask for calculations from what is visible; you draw your own conclusions.</p>
       <p className="mt-2 text-tiny text-ink-faint">The coach receives EMA 21, RSI 14, horizontal lines, and trend lines. Other overlays are visual-only.</p>
     </header>
-    <section className="mb-4 space-y-2" aria-label="Voice question">
-      <p role="status" className="text-base text-ink">Voice: {voiceState}</p>
-      <div className="flex flex-wrap gap-2">
-        {!voiceActive && <Button disabled={!voiceEnabled || busy || disabled} onClick={() => {
-          setError(null); setVoiceTranscript(''); setVoiceAnswer(''); void voice.current?.start(captureContext);
-        }}>Start microphone</Button>}
-        {voiceState === 'listening' && <Button onClick={() => voice.current?.stop()}>Stop and send</Button>}
-        {voiceActive && <Button onClick={() => voice.current?.cancel()}>Cancel / stop playback</Button>}
-      </div>
+    <section className="mb-4 space-y-2" aria-label="Coach conversation">
+      {!voiceEnabled
+        ? <div className="rounded-lg bg-raised p-3">
+            <p className="text-base text-ink">Voice unavailable</p>
+            <p className="mt-1 text-tiny text-ink-muted">The backend reports that playback validation has not passed, so the coach cannot listen or speak. Set <code>VOICE_PLAYBACK_VALIDATED=true</code> and point <code>DEEPGRAM_THINK_URL</code> at a live tunnel, then reload.</p>
+          </div>
+        : <>
+            <p role="status" className="text-base text-ink">{conversing ? STATUS[voiceState] : "Not started"}</p>
+            {conversing
+              ? <Button onClick={end}>End conversation</Button>
+              : <Button variant="primary" disabled={busy || disabled} onClick={begin}>Start conversation</Button>}
+            {conversing && <p className="text-tiny text-ink-faint">Speak, then pause. The coach replies and listens again automatically.</p>}
+          </>}
       <p className="text-tiny text-ink-faint">Deepgram transcribes your audio; ElevenLabs speaks the approved reply. This app retains raw audio and final transcripts for 30 days or until deletion. Provider retention may differ.</p>
       {voiceTranscript && <p className="text-base text-ink-muted">You: {voiceTranscript}</p>}
       {voiceAnswer && <p className="text-base text-ink">Coach: {voiceAnswer}</p>}
@@ -74,15 +124,6 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
         {t.answer && <p className="mt-2 text-ink">Coach: {t.answer}</p>}
       </div>)}
     </div>
-    <form className="mt-4 space-y-2" onSubmit={e => { e.preventDefault(); void run(async () => {
-      const snapshot = await captureContext();
-      await request("askQuestion", { params: { sessionId }, body: { chartSnapshotId: snapshot.id, text: question.trim() } });
-      setQuestion(""); await loadHistory();
-    }); }}>
-      <label htmlFor="chart-question" className="text-base text-ink">Chart question</label>
-      <Textarea id="chart-question" value={question} onChange={e => setQuestion(e.target.value)} placeholder="What is the closing price?" required />
-      <Button type="submit" disabled={busy || voiceActive || disabled || !question.trim()}>Ask about chart</Button>
-    </form>
     {error && <div className="mt-3"><ErrorBanner title="Could not continue" message={error} /></div>}
     <form className="mt-6 space-y-3 border-t border-line pt-4" onSubmit={e => { e.preventDefault(); setConfirming(true); }}>
       <h3 className="text-lead font-semibold text-ink">Your analysis</h3>
@@ -92,7 +133,7 @@ export function CoachSidebar({ sessionId, captureContext, disabled = false }: {
         <label className="text-base text-ink">Hypothetical action<Select value={action} onChange={e => setAction(e.target.value as typeof action)}><option value="long">Long</option><option value="short">Short</option><option value="wait">Wait</option></Select></label>
       </div>
       <label className="block text-base text-ink">Your confidence (%)<Input type="number" min={0} max={100} value={confidence} onChange={e => setConfidence(e.target.value)} required /></label>
-      <label className="block text-base text-ink">Evidence (one claim per line)<Textarea value={evidence} onChange={e => setEvidence(e.target.value)} placeholder="For example: close > EMA 9" /></label>
+      <label className="block text-base text-ink">Evidence (one claim per line)<Textarea value={evidence} onChange={e => setEvidence(e.target.value)} placeholder="For example: close above EMA 9" /></label>
       <label className="block text-base text-ink">What would invalidate your thesis?<Textarea value={invalidation} onChange={e => setInvalidation(e.target.value)} /></label>
       <label className="block text-base text-ink">Risk reasoning<Textarea value={risk} onChange={e => setRisk(e.target.value)} /></label>
       <Button type="submit" variant="primary" disabled={busy || voiceActive || disabled}>Review analysis</Button>
