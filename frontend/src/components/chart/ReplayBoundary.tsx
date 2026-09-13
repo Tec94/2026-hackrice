@@ -1,24 +1,27 @@
-/**
- * Shaded region at the right edge marking where the replay stops.
- *
- * Visual only — it communicates the constraint. Actual enforcement (refusing to
- * serve post-cutoff bars) belongs to the datafeed, which is not built yet.
- */
-
-/** Width of the chart's right price scale, so the overlay stops at the data edge. */
-const PRICE_SCALE_WIDTH = 60;
-
-export function ReplayBoundary() {
+export function ReplayBoundary({
+  left,
+  right,
+  horizon,
+  revealed = false,
+}: {
+  left: number;
+  right: number;
+  horizon: string;
+  revealed?: boolean;
+}) {
   return (
     <div
-      style={{ right: PRICE_SCALE_WIDTH }}
-      className="pointer-events-none absolute inset-y-0 flex w-24 items-start justify-end
-                 border-l border-dashed border-replay-500/40 bg-gradient-to-l
-                 from-replay-500/[0.07] to-transparent px-2 pt-3 sm:w-32"
+      style={{ left, right, bottom: 28 }}
+      className={`pointer-events-none absolute top-0 z-[4] border-l border-dashed border-replay-400 ${revealed ? "" : "hatch-hidden"}`}
     >
-      <p className="text-right text-micro font-medium leading-tight text-replay-200/80" role="note">
-        Future candles hidden
-      </p>
+      <div className="flex justify-end gap-2 whitespace-nowrap px-2 pt-3 text-micro">
+        <span className="hidden rounded-lg bg-[#241a13] px-2 py-1 text-replay-300 sm:block">
+          {revealed ? "Cutoff · 0" : "Replay boundary · 0"}
+        </span>
+        <span className="rounded-lg bg-ground/90 px-2 py-1 text-ink-muted">
+          {revealed ? "Revealed" : "Hidden"} · +{horizon}
+        </span>
+      </div>
     </div>
   );
 }

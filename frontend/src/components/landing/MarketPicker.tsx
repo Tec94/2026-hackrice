@@ -1,82 +1,78 @@
 "use client";
-
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
-import { MARKETS } from "@/view-models";
+import { CandlestickChart, ChartNoAxesCombined, Globe } from "lucide-react";
 import { createSession } from "@/hooks/useReplaySession";
 import { isApiError } from "@/services/api-client";
-import { ErrorBanner } from "@/components/ui";
-import { cn } from "@/utilities/cn";
-
-/**
- * Starting a session is a real API call: sessions are server-owned UUIDs, so a
- * market card creates one and then routes to `/replay/<uuid>`.
- */
+import { Button, ErrorBanner } from "@/components/ui";
 export function MarketPicker() {
   const router = useRouter();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const start = async (id: string) => {
-    setBusy(id);
-    setError(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function start() {
+    setBusy(true);
+    setError("");
     try {
-      const sessionId = await createSession("15m", "1h");
-      router.push(`/replay/${sessionId}`);
+      const id = await createSession("15m", "1h");
+      router.push(`/replay/${id}`);
     } catch (e) {
       if (isApiError(e, "unauthenticated")) {
-        router.push("/sign-in?next=%2F%23markets");
+        router.push("/sign-in?mode=sign-up&next=%2Fstart");
         return;
       }
       setError(
         isApiError(e, "insufficient_data")
-          ? "The API has no candle history imported yet. Run the import command, then try again."
-          : e instanceof Error
-            ? e.message
-            : "Could not start a session.",
+          ? "No replay is available for this market yet. Please try again after market history is available."
+          : "Could not start your replay. Please try again.",
       );
-      setBusy(null);
+      setBusy(false);
     }
-  };
-
+  }
   return (
     <div className="space-y-3">
-      {error && <ErrorBanner title="Could not start a session" message={error} />}
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        {MARKETS.map((market) => (
-          <button
-            key={market.id}
-            onClick={() => market.available && void start(market.id)}
-            disabled={!market.available || busy !== null}
-            aria-label={
-              market.available ? `Start a ${market.label} session` : `${market.label} — coming soon`
-            }
-            className={cn(
-              "surface motion-card group rounded-xl2 bg-panel p-5 text-left",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400",
-              market.available
-                ? "hover:border-accent-500/45 hover:bg-raised"
-                : "cursor-not-allowed opacity-45",
-              "motion-reduce:transition-none",
-            )}
+      {error && (
+        <ErrorBanner
+          title="Replay unavailable"
+          message={error}
+          onRetry={start}
+        />
+      )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          {
+            name: "Crypto",
+            detail: "SOL / USDT · Binance spot, 5m source",
+            Icon: CandlestickChart,
+          },
+          {
+            name: "Stocks",
+            detail: "Equities on a session clock",
+            Icon: ChartNoAxesCombined,
+          },
+          { name: "Forex", detail: "Majors, 24/5", Icon: Globe },
+        ].map(({ name, detail, Icon }, i) => (
+          <article
+            key={name}
+            className={`surface rounded-2xl p-5 ${i ? "opacity-55" : ""}`}
           >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-lead font-semibold text-ink">{market.label}</span>
-              {market.available && (
-                <ArrowRight
-                  size={16}
-                  className="text-ink-faint transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none"
-                  aria-hidden="true"
-                />
-              )}
+            <div className="mb-4 flex items-center gap-3">
+              <span className={`icon-well ${i ? "" : "button-primary"}`}>
+                <Icon size={19} />
+              </span>
+              <div>
+                <h3 className="font-semibold">{name}</h3>
+                <p className="mt-1 text-tiny text-ink-muted">{detail}</p>
+              </div>
             </div>
-            <p className="mt-1.5 text-base text-ink-muted">{market.blurb}</p>
-            <p className="nums mt-4 text-micro text-accent-300">
-              {busy === market.id ? "Starting…" : market.symbol}
-            </p>
-          </button>
+            <Button
+              className="w-full"
+              variant={i ? "ghost" : "primary"}
+              disabled={i > 0 || busy}
+              onClick={start}
+            >
+              {i ? "Coming soon" : busy ? "Starting replay…" : "Start replay"}
+            </Button>
+          </article>
         ))}
       </div>
     </div>

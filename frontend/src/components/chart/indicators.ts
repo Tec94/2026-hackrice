@@ -19,9 +19,27 @@ export interface IndicatorDef {
 }
 
 export const INDICATOR_DEFS: IndicatorDef[] = [
-  { id: "sma20", label: "SMA 20", short: "SMA 20", pane: "price", color: "#d4a24b" },
-  { id: "sma50", label: "SMA 50", short: "SMA 50", pane: "price", color: "#7c6ce4" },
-  { id: "ema21", label: "EMA 21", short: "EMA 21", pane: "price", color: "#4ec9a0" },
+  {
+    id: "sma20",
+    label: "SMA 20",
+    short: "SMA 20",
+    pane: "price",
+    color: "#d4a24b",
+  },
+  {
+    id: "sma50",
+    label: "SMA 50",
+    short: "SMA 50",
+    pane: "price",
+    color: "#7c6ce4",
+  },
+  {
+    id: "ema21",
+    label: "EMA 21",
+    short: "EMA 21",
+    pane: "price",
+    color: "#e2b45c",
+  },
   {
     id: "bb20",
     label: "Bollinger Bands (20, 2)",
@@ -30,7 +48,13 @@ export const INDICATOR_DEFS: IndicatorDef[] = [
     color: "#8a8a8a",
     extraColors: ["#8a8a8a"],
   },
-  { id: "rsi14", label: "Relative Strength Index (14)", short: "RSI 14", pane: "separate", color: "#d4a24b" },
+  {
+    id: "rsi14",
+    label: "Relative Strength Index (14)",
+    short: "RSI 14",
+    pane: "separate",
+    color: "#d4a24b",
+  },
   {
     id: "macd",
     label: "MACD (12, 26, 9)",
@@ -54,7 +78,8 @@ export function sma(candles: Candle[], period: number): LinePoint[] {
   for (let i = 0; i < candles.length; i += 1) {
     sum += candles[i].close;
     if (i >= period) sum -= candles[i - period].close;
-    if (i >= period - 1) out.push({ time: candles[i].time, value: sum / period });
+    if (i >= period - 1)
+      out.push({ time: candles[i].time, value: sum / period });
   }
   return out;
 }
@@ -87,7 +112,8 @@ export function bollinger(
   for (let i = period - 1; i < candles.length; i += 1) {
     const win = candles.slice(i - period + 1, i + 1);
     const mean = win.reduce((s, c) => s + c.close, 0) / period;
-    const variance = win.reduce((s, c) => s + (c.close - mean) ** 2, 0) / period;
+    const variance =
+      win.reduce((s, c) => s + (c.close - mean) ** 2, 0) / period;
     const sd = Math.sqrt(variance);
     const t = candles[i].time;
     upper.push({ time: t, value: mean + mult * sd });

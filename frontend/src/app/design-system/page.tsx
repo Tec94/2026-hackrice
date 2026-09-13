@@ -1,79 +1,206 @@
 "use client";
-
-import Link from "next/link";
-import { useState } from "react";
-import { ArrowRight } from "lucide-react";
-import { Badge, Button, Card, Dialog, Input, ProgressBar } from "@/components/ui";
-
-const COLORS = [
-  { name: "Ground", value: "#0a0a0a", style: "bg-ground" },
-  { name: "Panel", value: "#121212", style: "bg-panel" },
-  { name: "Raised", value: "#1c1c1c", style: "bg-raised" },
-  { name: "Ink", value: "#f2f2f2", style: "bg-ink" },
-  { name: "Accent", value: "#d4a24b", style: "bg-accent-400" },
-  { name: "Coach", value: "#9184ee", style: "bg-coach-400" },
+import { useState, type CSSProperties } from "react";
+import { AppHeader, SessionTrack } from "@/components/layout/AppHeader";
+import { Button, Dialog, ProgressBar } from "@/components/ui";
+const colors = [
+  ["Ground", "#0e0e10"],
+  ["Inset", "#101012"],
+  ["Panel", "#171719"],
+  ["Raised", "#252529"],
+  ["Accent", "#e2b45c"],
+  ["Replay", "#c47a3a"],
+  ["Coach", "#9184ee"],
+  ["Bull", "#34c77b"],
+  ["Bear", "#f0524f"],
 ];
-
 export default function DesignSystemPage() {
-  const [entrance, setEntrance] = useState(0);
   const [dialog, setDialog] = useState(false);
-  const [progress, setProgress] = useState(50);
-
+  const [entrance, setEntrance] = useState(0);
+  const [voice, setVoice] = useState("listening");
+  const [progress, setProgress] = useState(60);
+  const [status, setStatus] = useState<
+    "exploring" | "submitted" | "revealed" | "completed"
+  >("exploring");
+  const [curtain, setCurtain] = useState(0);
   return (
-    <div className="min-h-screen bg-ground">
-      <header className="border-b border-line">
-        <nav className="page-shell flex min-h-16 flex-wrap items-center justify-between gap-3 py-3" aria-label="Design system navigation">
-          <Link href="/" className="motion-control rounded-lg py-2 text-base font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400">Chartroom</Link>
-          <span className="text-tiny text-ink-muted">Design + motion / working reference</span>
-        </nav>
-      </header>
-      <main className="page-shell pb-20">
-        <section className="section-space grid gap-8 lg:grid-cols-2 lg:items-end">
+    <div className="min-h-screen">
+      <AppHeader />
+      <main className="page-shell py-14">
+        <p className="eyebrow">Chartroom · design and motion system</p>
+        <h1 className="mt-5 text-display font-semibold tracking-tight">
+          Same identity, more depth.
+        </h1>
+        <p className="mt-4 max-w-2xl text-lead leading-relaxed text-ink-muted">
+          A study room with an instrument in it. Lit surfaces establish
+          hierarchy. Motion makes state changes legible; candles, axes,
+          drawings, and prices stay still.
+        </p>
+        <section className="mt-12 grid gap-5 md:grid-cols-3">
+          {[
+            ["surface-hero", "Hero plane", "Chart and primary content"],
+            ["surface-inset", "Inset plane", "Coach and fields"],
+            [
+              "control-surface",
+              "Control plane",
+              "Raised actions and selections",
+            ],
+          ].map(([style, title, body]) => (
+            <article key={title} className={`${style} rounded-2xl p-6`}>
+              <span className="icon-well mb-5">↗</span>
+              <h2 className="text-title font-semibold">{title}</h2>
+              <p className="mt-2 text-tiny text-ink-muted">{body}</p>
+              <p className="mt-4 text-micro text-ink-faint">
+                Hairline ring · top light · contact + ambient shadows
+              </p>
+            </article>
+          ))}
+        </section>
+        <section className="mt-12">
+          <h2 className="mb-5 text-title font-semibold">Color roles</h2>
+          <div className="grid grid-cols-3 gap-4 md:grid-cols-9">
+            {colors.map(([label, value]) => (
+              <div key={label}>
+                <div
+                  className="h-16 rounded-xl ring-1 ring-white/10"
+                  style={{ background: value }}
+                />
+                <p className="mt-3 text-tiny">{label}</p>
+                <p className="nums mt-1 text-micro text-ink-faint">{value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="mt-12 grid gap-8 lg:grid-cols-2">
+          <div className="surface rounded-2xl p-6">
+            <h2 className="text-title font-semibold">
+              Three control materials
+            </h2>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button variant="primary" onClick={() => setDialog(true)}>
+                Commit analysis
+              </Button>
+              <Button onClick={() => setProgress(0)}>Reset view</Button>
+              <Button variant="ghost" onClick={() => setProgress(60)}>
+                Cancel
+              </Button>
+            </div>
+            <p className="mt-5 text-tiny text-ink-muted">
+              150ms press · soft release. Dialogs enter in 350ms and leave in
+              120ms.
+            </p>
+          </div>
+          <div className="surface rounded-2xl p-6">
+            <h2 className="mb-5 text-title font-semibold">Session states</h2>
+            <SessionTrack
+              status={status}
+              revealReady={status === "revealed" || status === "completed"}
+            />
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(
+                ["exploring", "submitted", "revealed", "completed"] as const
+              ).map((s) => (
+                <Button key={s} variant="ghost" onClick={() => setStatus(s)}>
+                  {s}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className="mt-12 grid gap-8 lg:grid-cols-2">
+          <div className="surface rounded-2xl p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-title font-semibold">Ordered entrances</h2>
+              <Button variant="ghost" onClick={() => setEntrance((v) => v + 1)}>
+                Replay entrance
+              </Button>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3" key={entrance}>
+              {["EMA 21", "RSI 14", "SMA 50", "MACD"].map((text, i) => (
+                <span
+                  className="fact-chip stagger-item"
+                  style={{ "--i": i } as CSSProperties}
+                  key={text}
+                >
+                  {text}
+                </span>
+              ))}
+            </div>
+            <p className="mt-5 text-tiny text-ink-muted">
+              350ms expo-out · 40ms stagger, capped at six siblings.
+            </p>
+          </div>
+          <div className="surface rounded-2xl p-6">
+            <h2 className="text-title font-semibold">One voice orb</h2>
+            <div className="mt-6 flex items-center gap-4">
+              <span className="voice-orb" data-state={voice} />
+              <span className="capitalize">{voice}</span>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {["listening", "thinking", "speaking", "idle"].map((state) => (
+                <Button
+                  key={state}
+                  variant="ghost"
+                  onClick={() => setVoice(state)}
+                >
+                  {state === "idle" ? "Paused" : state}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className="mt-12 grid gap-8 lg:grid-cols-2">
           <div>
-            <p className="text-micro uppercase tracking-wider text-accent-300">The foundation</p>
-            <h1 className="mt-4 text-display font-semibold tracking-tight sm:text-hero">Quiet surfaces.<br />Clear intent.</h1>
-            <p className="mt-5 max-w-xl text-lead leading-relaxed text-ink-muted">A tactile layer for chart analysis. Fine edges and soft depth separate controls from content. Motion confirms an action; it never interprets the market.</p>
+            <h2 className="mb-5 text-title font-semibold">Confidence fill</h2>
+            <label className="block text-tiny">
+              Sample confidence · {progress}%
+              <input
+                className="my-5 block w-full accent-accent-400"
+                type="range"
+                min={0}
+                max={100}
+                value={progress}
+                onChange={(e) => setProgress(Number(e.target.value))}
+              />
+            </label>
+            <ProgressBar value={progress} label="Sample confidence" />
+            <p className="mt-4 text-tiny text-ink-muted">
+              A scale transform with 200ms settle; no change in layout.
+            </p>
           </div>
-          <div className="surface rounded-xl2 bg-panel p-6">
-            <p className="text-micro uppercase tracking-wider text-ink-muted">Surface recipe</p>
-            <p className="mt-3 text-title font-semibold">0.5px border</p>
-            <p className="mt-2 text-base text-ink-muted">Soft inner white shadow</p>
-            <p className="mt-1 text-base text-ink-muted">Double drop shadow: contact + ambient</p>
-            <div className="mt-6 flex flex-wrap gap-3"><Button variant="primary">Primary control <ArrowRight size={16} aria-hidden="true" /></Button><Button>Secondary</Button></div>
-          </div>
-        </section>
-
-        <section className="border-t border-line py-12" aria-labelledby="palette-title">
-          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2"><h2 id="palette-title" className="text-title font-semibold">01 / Color roles</h2><p className="text-base text-ink-muted">Existing palette, purposeful emphasis.</p></div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {COLORS.map(color => <div key={color.name}><div className={`h-20 rounded-lg border border-line ${color.style}`} /><p className="mt-3 text-base font-medium">{color.name}</p><p className="nums text-tiny text-ink-muted">{color.value}</p></div>)}
-          </div>
-          <div className="mt-6 flex flex-wrap items-center gap-3"><Badge tone="replay">Historical replay</Badge><Badge tone="coach">Listening</Badge><Badge tone="bull">Higher</Badge><Badge tone="bear">Lower</Badge><span className="text-tiny text-ink-muted">Color always has a text label.</span></div>
-        </section>
-
-        <section className="grid gap-10 border-t border-line py-12 lg:grid-cols-2" aria-labelledby="type-title">
-          <div><h2 id="type-title" className="text-title font-semibold">02 / Type & spacing</h2><p className="mt-3 max-w-lg text-base text-ink-muted">Keep the current typeface. Let size, weight, and proximity establish hierarchy. Use tabular figures for prices and counts.</p><p className="mt-6 text-display font-semibold tracking-tight">Chart first.</p><p className="mt-3 text-lead">Group related controls. Separate decisions.</p><p className="nums mt-3 text-title text-accent-300">102.51 · 120 candles</p></div>
-          <div className="space-y-6"><p className="text-micro uppercase tracking-wider text-ink-muted">Spacing relationships</p>{[{label:"Related elements",value:"8px",width:"w-2"},{label:"Control groups",value:"16px",width:"w-4"},{label:"Panel sections",value:"24px",width:"w-6"}].map(space=><div key={space.label} className="flex items-center gap-4"><span aria-hidden="true" className={`h-4 shrink-0 rounded-sm bg-accent-400 ${space.width}`} /><p className="flex-1 text-base">{space.label}</p><span className="nums text-tiny text-ink-muted">{space.value}</span></div>)}<p className="text-base text-ink-muted">Landing pages breathe. The replay workspace stays compact, with a separately scrolling coach panel.</p></div>
-        </section>
-
-        <section className="border-t border-line py-12" aria-labelledby="controls-title">
-          <h2 id="controls-title" className="mb-6 text-title font-semibold">03 / Controls & states</h2>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card title="Action hierarchy"><div className="flex flex-wrap gap-3"><Button variant="primary" onClick={()=>setDialog(true)}>Open preview dialog</Button><Button variant="accent">Accent</Button><Button variant="ghost">Ghost</Button><Button disabled>Unavailable</Button></div><p className="mt-4 text-base text-ink-muted">Tab through controls to inspect focus. Press a button to feel the subtle depth change.</p></Card>
-            <Card title="Field anatomy"><label htmlFor="sample-thesis" className="mb-2 block text-base font-medium">Your thesis</label><Input id="sample-thesis" placeholder="Write what you observe" aria-describedby="sample-hint" /><p id="sample-hint" className="mt-2 text-tiny text-ink-muted">Labels stay visible. This sample is not saved.</p></Card>
-          </div>
-        </section>
-
-        <section className="border-t border-line py-12" aria-labelledby="motion-title">
-          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2"><h2 id="motion-title" className="text-title font-semibold">04 / Motion language</h2><p className="text-base text-ink-muted motion-reduce:hidden">System motion preference: standard</p><p className="hidden text-base text-ink-muted motion-reduce:block">System motion preference: reduced — movement disabled</p></div>
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div><div className="mb-5 flex flex-wrap gap-3"><Button onClick={()=>setEntrance(value=>value+1)}>Replay entrance</Button><span className="self-center text-tiny text-ink-muted">350ms · 6px settle · no bounce</span></div><div key={entrance} className="surface animate-rise-in rounded-xl2 bg-panel p-6"><p className="text-lead font-medium">Content arrives. Data stays still.</p><p className="mt-2 text-base text-ink-muted">Use this entrance for dialogs, menus, and the landing preview. Do not animate live chart geometry.</p></div></div>
-            <div className="space-y-4"><p className="text-lead font-medium">150ms feedback / 200ms state change</p><p className="text-base text-ink-muted">Hover actionable cards for a small lift. Progress uses a transform instead of changing layout width.</p><label htmlFor="sample-progress" className="block text-base">Sample progress: {progress}%</label><input id="sample-progress" type="range" min="0" max="100" value={progress} onChange={event=>setProgress(Number(event.target.value))} className="min-h-touch w-full accent-accent-400" /><ProgressBar value={progress} label="Sample progress" /></div>
+          <div>
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-title font-semibold">Reveal curtain</h2>
+              <Button variant="ghost" onClick={() => setCurtain((c) => c + 1)}>
+                Replay curtain
+              </Button>
+            </div>
+            <div className="surface-hero relative grid h-32 place-items-center text-ink-muted">
+              The chart stays still
+              <div key={curtain} className="reveal-curtain hatch-hidden" />
+            </div>
+            <p className="mt-4 text-tiny text-ink-muted">
+              500ms expo-out. The curtain moves; the outcome does not.
+            </p>
           </div>
         </section>
-        <footer className="border-t border-line pt-6 text-base text-ink-muted">Both-axis overscroll is disabled. Normal scrolling, chart pan and zoom, and keyboard navigation remain available.</footer>
+        <p className="mt-12 border-t border-line pt-6 text-tiny text-ink-muted">
+          Reduced motion disables all movement. Keyboard focus, state labels,
+          and chart navigation remain available.
+        </p>
       </main>
-      <Dialog open={dialog} onClose={()=>setDialog(false)} title="A focused decision" description="This is a design preview. No analysis is submitted." actions={<Button variant="primary" onClick={()=>setDialog(false)}>Done</Button>}><p>Soft depth, a fine edge, and a short entrance. Escape closes the dialog and returns focus to its trigger.</p></Dialog>
+      <Dialog
+        open={dialog}
+        onClose={() => setDialog(false)}
+        title="A focused decision"
+        description="Design preview only. No analysis is submitted."
+        actions={
+          <Button variant="primary" onClick={() => setDialog(false)}>
+            Done
+          </Button>
+        }
+      >
+        <p>Escape dismisses this dialog and returns focus to its trigger.</p>
+      </Dialog>
     </div>
   );
 }

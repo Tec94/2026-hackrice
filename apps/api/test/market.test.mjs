@@ -312,3 +312,26 @@ test("evaluation verifies only explicit comparisons using pre-cutoff facts and l
   assert.deepEqual(result, evaluateSubmission({ ...input, candles: [...bars(12), ...bars(12, hour)] }));
   assert.ok(result.evaluation.findings.flatMap((finding) => finding.factIds).every((id) => result.facts.some((fact) => fact.id === id)));
 });
+
+
+test("screen evidence compares two computed metrics without grading prose or mixing units", () => {
+  const input = { snapshot, candles: bars(24), cutoffTimeMs: 2 * hour, decimalPolicy: policy };
+  const result = evaluateSubmission({ ...input, id: snapshot.id, submissionId: snapshot.sessionId,
+    submission: { ...submission, claimedEvidence: ["close > ema 21", "rsi 14 <= 70", "buyers look stronger", "close > rsi 14", "close > future price"] } });
+  const evidence = result.evaluation.findings.filter(f => f.category === "evidence");
+  assert.equal(evidence[0].status, "supported");
+  assert.equal(evidence[0].factIds.length, 2);
+  assert.equal(evidence[1].status, "contradicted");
+  assert.deepEqual(evidence.slice(2).map(f => f.status), ["not_assessable", "not_assessable", "not_assessable"]);
+  assert.equal(result.evaluation.overallScore, null);
+  assert.ok(result.facts.every(f => f.chartSnapshotId === snapshot.id && f.calculatedThroughOffsetMinutes <= 0));
+});
+
+test("the screen's compound coach question returns both frozen facts and preserves refusals", () => {
+  const input = { snapshot, candles: bars(24), cutoffTimeMs: 2 * hour, decimalPolicy: policy };
+  const reply = answerQuestion({ ...input, text: "What's the RSI 14 and close on the selected candle?" });
+  assert.equal(reply.kind, "calculation");
+  assert.deepEqual(reply.facts.map(f => f.metric), ["rsi", "close"]);
+  assert.ok(reply.facts.every(f => f.chartSnapshotId === snapshot.id));
+  assert.equal(answerQuestion({ ...input, text: "RSI 14 and what will happen next?" }).kind, "refusal");
+});

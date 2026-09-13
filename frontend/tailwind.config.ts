@@ -17,15 +17,15 @@ const config: Config = {
     extend: {
       colors: {
         /* Near-black ground with two barely-separated surfaces above it. */
-        ground: "#0a0a0a",
-        panel: "#121212",
-        raised: "#1c1c1c",
-        line: "#262626",
+        ground: "#0e0e10",
+        panel: "#171719",
+        raised: "#252529",
+        line: "#303035",
 
         ink: {
-          DEFAULT: "#f2f2f2",
-          muted: "#a8a8a8",
-          faint: "#6b6b6b",
+          DEFAULT: "#ececef",
+          muted: "#a3a3ad",
+          faint: "#92929d",
         },
 
         /* Amber is the brand accent: badges, primary marks, replay notices. */
@@ -33,7 +33,7 @@ const config: Config = {
           50: "#fdf6e8",
           200: "#f0d9a8",
           300: "#e3be76",
-          400: "#d4a24b",
+          400: "#e2b45c",
           500: "#c08a33",
           600: "#9d6f28",
           700: "#7a561f",
@@ -41,11 +41,11 @@ const config: Config = {
 
         /* Kept as an alias so replay/future notices read amber too. */
         replay: {
-          200: "#f0d9a8",
-          300: "#e3be76",
-          400: "#d4a24b",
-          500: "#c08a33",
-          600: "#9d6f28",
+          200: "#e4bb95",
+          300: "#d69a63",
+          400: "#c47a3a",
+          500: "#a9602d",
+          600: "#82441e",
         },
 
         /* Violet is reserved for coach/voice activity only. */
@@ -55,24 +55,33 @@ const config: Config = {
           500: "#7c6ce4",
         },
 
-        bull: { DEFAULT: "#4ec9a0", soft: "#10322a" },
-        bear: { DEFAULT: "#e8695f", soft: "#3a1a18" },
+        bull: { DEFAULT: "#34c77b", soft: "#10322a" },
+        bear: { DEFAULT: "#f0524f", soft: "#3a1a18" },
       },
 
       fontSize: {
         micro: ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.02em" }],
         tiny: ["0.75rem", { lineHeight: "1.125rem" }],
-        base: ["0.875rem", { lineHeight: "1.375rem" }],
+        base: ["0.84375rem", { lineHeight: "1.375rem" }],
         lead: ["1rem", { lineHeight: "1.5rem" }],
-        title: ["1.375rem", { lineHeight: "1.75rem", letterSpacing: "-0.01em" }],
-        display: ["2.25rem", { lineHeight: "2.5rem", letterSpacing: "-0.025em" }],
+        title: ["1.125rem", { lineHeight: "1.5rem", letterSpacing: "-0.01em" }],
+        display: [
+          "2.25rem",
+          { lineHeight: "2.5rem", letterSpacing: "-0.025em" },
+        ],
         hero: ["3.25rem", { lineHeight: "1.05", letterSpacing: "-0.035em" }],
       },
 
       borderRadius: { xl2: "0.875rem" },
       borderWidth: { hairline: "var(--border-hairline)" },
-      transitionDuration: { feedback: "var(--motion-feedback)", state: "var(--motion-state)" },
-      transitionTimingFunction: { settle: "var(--ease-settle)", enter: "var(--ease-enter)" },
+      transitionDuration: {
+        feedback: "var(--motion-feedback)",
+        state: "var(--motion-state)",
+      },
+      transitionTimingFunction: {
+        settle: "var(--ease-settle)",
+        enter: "var(--ease-enter)",
+      },
 
       height: { touch: "44px" },
       width: { touch: "44px" },
@@ -99,7 +108,8 @@ const config: Config = {
         },
       },
       animation: {
-        "pulse-ring": "pulseRing var(--motion-cycle) var(--ease-settle) infinite",
+        "pulse-ring":
+          "pulseRing var(--motion-cycle) var(--ease-settle) infinite",
         "rise-in": "riseIn var(--motion-enter) var(--ease-enter) both",
       },
     },

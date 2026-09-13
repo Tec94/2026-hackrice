@@ -177,6 +177,27 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
     assertBlind(history);
   });
 
+  await t.test("archive is reversible, owned, idempotent, and preserves the replay and expiry", async () => {
+    const original = status(await request(alice.cookie, "GET", `/api/sessions/${session.id}`), 200);
+    const archiveKey = randomUUID();
+    status(await request(bob.cookie, "PUT", `/api/sessions/${session.id}/archive`, { archived: true }), 404);
+    const archived = status(await request(alice.cookie, "PUT", `/api/sessions/${session.id}/archive`, { archived: true }, archiveKey), 200);
+    assert.equal(archived.archived, true);
+    assert.equal(archived.status, original.status);
+    assert.equal(archived.expiresAt, original.expiresAt);
+    assert.deepEqual(status(await request(alice.cookie, "PUT", `/api/sessions/${session.id}/archive`, { archived: true }, archiveKey), 200), archived);
+    status(await request(alice.cookie, "PUT", `/api/sessions/${session.id}/archive`, { archived: false }, archiveKey), 409);
+    assert.equal(status(await request(alice.cookie, "GET", "/api/sessions"), 200).find(s => s.id === session.id).archived, true);
+    const restored = status(await request(alice.cookie, "PUT", `/api/sessions/${session.id}/archive`, { archived: false }), 200);
+    assert.equal(restored.archived, false);
+    assert.equal(restored.latestChartRevision, original.latestChartRevision);
+    assert.equal(restored.expiresAt, original.expiresAt);
+    const history = status(await request(alice.cookie, "GET", `/api/sessions/${session.id}/history`), 200);
+    assert.ok(history.snapshots.some(s => s.id === snapshot.id));
+    assert.ok(history.facts.every(f => history.snapshots.some(s => s.id === f.chartSnapshotId)));
+    assertBlind(history);
+  });
+
   await t.test("pre-reveal bars, calculations, and errors cannot disclose the future or source dates", async () => {
     for (const timeframe of C.Timeframe.options) {
       const result = C.Bars.parse(status(await request(alice.cookie, "GET",

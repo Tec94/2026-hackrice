@@ -13,7 +13,9 @@ export interface AuthUser {
 }
 
 export function safeReturnPath(path: string): string {
-  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\") ? path : "/";
+  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\")
+    ? path
+    : "/";
 }
 
 async function post(path: string, body: unknown): Promise<{ user: AuthUser }> {
@@ -27,7 +29,8 @@ async function post(path: string, body: unknown): Promise<{ user: AuthUser }> {
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new Error(
-      (detail as { message?: string } | null)?.message ?? "Authentication failed. Check your details and try again.",
+      (detail as { message?: string } | null)?.message ??
+        "Authentication failed. Check your details and try again.",
     );
   }
   return response.json();
@@ -42,13 +45,22 @@ export function signIn(email: string, password: string) {
 }
 
 export async function signOut(): Promise<void> {
-  await fetch("/api/auth/sign-out", { method: "POST", credentials: "include" });
+  const response = await fetch("/api/auth/sign-out", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Could not sign out.");
 }
 
 /** Returns the signed-in user, or null when there is no valid session. */
 export async function getSession(): Promise<AuthUser | null> {
-  const response = await fetch("/api/auth/get-session", { credentials: "include", cache: "no-store" });
+  const response = await fetch("/api/auth/get-session", {
+    credentials: "include",
+    cache: "no-store",
+  });
   if (!response.ok) return null;
-  const data = (await response.json().catch(() => null)) as { user?: AuthUser } | null;
+  const data = (await response.json().catch(() => null)) as {
+    user?: AuthUser;
+  } | null;
   return data?.user ?? null;
 }

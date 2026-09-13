@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -14,7 +21,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { ChartCandle as Candle } from "@/adapters/chart";
-import { describeOffset, timeToOffset } from "@/adapters/chart";
+import { describeOffset, timeToOffset, offsetToTime } from "@/adapters/chart";
 import { ReplayBoundary } from "./ReplayBoundary";
 import { ErrorBanner, Skeleton } from "@/components/ui";
 import { computeIndicator, indicatorDef } from "./indicators";
@@ -27,8 +34,8 @@ import {
   type ProjectedDrawing,
 } from "./drawings";
 
-const UP = "#4ec9a0";
-const DOWN = "#e8695f";
+const UP = "#34c77b";
+const DOWN = "#f0524f";
 
 /** `null` means the cursor tool: pan/zoom, select and drag existing drawings. */
 export type ActiveTool = DrawingKind | null;
@@ -45,6 +52,8 @@ export interface TradingViewChartProps {
   onSelectCandle?: (candle: Candle | null) => void;
   onVisibleCountChange?: (count: number) => void;
   showBoundary?: boolean;
+  horizon?: "5m" | "15m" | "1h";
+  readOnly?: boolean;
   /** Indicator ids currently enabled (see `indicators.ts`). */
   indicators?: string[];
   activeTool?: ActiveTool;
@@ -69,8 +78,16 @@ function toVol(c: Candle) {
   return {
     time: c.time as UTCTimestamp,
     value: c.volume,
-    color: c.close >= c.open ? "rgba(78,201,160,0.38)" : "rgba(232,105,95,0.38)",
+    color:
+      c.close >= c.open ? "rgba(78,201,160,0.38)" : "rgba(232,105,95,0.38)",
   };
+}
+
+function axisOffset(time: Time) {
+  const offset = timeToOffset(Number(time));
+  if (!offset) return "0";
+  const minutes = Math.abs(offset);
+  return `${offset < 0 ? "−" : "+"}${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}h` : ""}${minutes % 60 ? `${minutes % 60}m` : ""}`;
 }
 
 /**
@@ -92,6 +109,8 @@ export function TradingViewChart({
   onSelectCandle,
   onVisibleCountChange,
   showBoundary = true,
+  horizon = "1h",
+  readOnly = false,
   indicators = [],
   activeTool = null,
   drawings = [],
@@ -100,7 +119,12 @@ export function TradingViewChart({
   ref,
 }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const [boundary, setBoundary] = useState<{
+    left: number;
+    right: number;
+  } | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -182,7 +206,8 @@ export function TradingViewChart({
     ctx.clearRect(0, 0, rect.width, rect.height);
 
     // Clip to the plot area so nothing paints over the price or time axes.
-    const plotW = rect.width - (chartRef.current?.priceScale("right").width() ?? 0);
+    const plotW =
+      rect.width - (chartRef.current?.priceScale("right").width() ?? 0);
     const plotH = rect.height - (chartRef.current?.timeScale().height() ?? 0);
     ctx.save();
     ctx.beginPath();
@@ -191,7 +216,9 @@ export function TradingViewChart({
 
     const all = [...drawingsRef.current];
     if (draftRef.current) all.push(draftRef.current);
-    const projected = all.map(toScreen).filter((p): p is ProjectedDrawing => p !== null);
+    const projected = all
+      .map(toScreen)
+      .filter((p): p is ProjectedDrawing => p !== null);
     paint(ctx, projected, plotW, selectedRef.current);
     ctx.restore();
   }, [toScreen]);
@@ -201,11 +228,54 @@ export function TradingViewChart({
     indicatorRefs.current.forEach((seriesList, id) => {
       const values = computeIndicator(id, dataRef.current);
       seriesList.forEach((s, i) => {
-        s.setData((values[i] ?? []).map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+        s.setData(
+          (values[i] ?? []).map((p) => ({
+            time: p.time as UTCTimestamp,
+            value: p.value,
+          })),
+        );
       });
     });
   }, []);
 
+  const chartData = (candles: Candle[]) => {
+    const minutes = { "5m": 5, "15m": 15, "1h": 60 }[horizon];
+    const interval =
+      candles.length > 1
+        ? candles[1].offsetMinutes - candles[0].offsetMinutes
+        : minutes;
+    const last = candles.at(-1)?.offsetMinutes ?? -interval;
+    const whitespace = [];
+    for (
+      let offset = Math.max(0, last + interval);
+      offset <= minutes;
+      offset += interval
+    )
+      whitespace.push({ time: offsetToTime(offset) });
+    return [...candles.map(toBar), ...whitespace];
+  };
+  const fitView = () => {
+    const chart = chartRef.current;
+    if (!chart || !dataRef.current.length) return;
+    const width =
+      (containerRef.current?.clientWidth ?? 0) -
+      chart.priceScale("right").width();
+    const context = document.createElement("canvas").getContext("2d");
+    if (context) context.font = "11px system-ui";
+    // Reserve the measured label width, so the withheld horizon cannot collapse into the price axis.
+    const labels =
+      width < 640
+        ? `Hidden · +${horizon}`
+        : `Replay boundary · 0     Hidden · +${horizon}`;
+    const labelWidth = (context?.measureText(labels).width ?? 0) + 32;
+    const last = dataRef.current.length - 1;
+    chart.timeScale().setVisibleLogicalRange({
+      from: 0,
+      to: showBoundary
+        ? (last * width) / Math.max(1, width - labelWidth)
+        : last + 1,
+    });
+  };
   useImperativeHandle(
     ref,
     (): ChartHandle => ({
@@ -223,20 +293,24 @@ export function TradingViewChart({
         const series = candleSeriesRef.current;
         const volume = volumeSeriesRef.current;
         if (!series || !volume) return;
-        series.setData(candles.map(toBar));
+        series.setData(chartData(candles));
         volume.setData(candles.map(toVol));
         dataRef.current = candles;
         refreshIndicators();
-        chartRef.current?.timeScale().fitContent();
+        fitView();
         redraw();
       },
       resetView() {
-        chartRef.current?.timeScale().fitContent();
+        fitView();
         redraw();
       },
       visibleCandles() {
         const range = chartRef.current?.timeScale().getVisibleRange();
-        return range ? dataRef.current.filter(c => c.time >= Number(range.from) && c.time <= Number(range.to)) : dataRef.current;
+        return range
+          ? dataRef.current.filter(
+              (c) => c.time >= Number(range.from) && c.time <= Number(range.to),
+            )
+          : dataRef.current;
       },
     }),
     [redraw, refreshIndicators],
@@ -254,23 +328,31 @@ export function TradingViewChart({
 
     const chart: IChartApi = createChart(container, {
       layout: {
-        background: { type: ColorType.Solid, color: "#0a0a0a" },
+        background: { type: ColorType.Solid, color: "#19191c" },
         textColor: "#a8a8a8",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "#1c1c1c" },
-        horzLines: { color: "#1c1c1c" },
+        vertLines: { color: "#ffffff08" },
+        horzLines: { color: "#ffffff08" },
       },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
         borderColor: "#262626",
         scaleMargins: { top: 0.08, bottom: 0.26 },
       },
-      timeScale: { borderColor: "#262626", timeVisible: true, secondsVisible: false,
-        tickMarkFormatter: (time: Time) => describeOffset(timeToOffset(Number(time))) },
-      localization: { priceFormatter: (p: number) => p.toFixed(2), timeFormatter: (time: Time) => describeOffset(timeToOffset(Number(time))) },
+      timeScale: {
+        borderColor: "#262626",
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: axisOffset,
+      },
+      localization: {
+        priceFormatter: (p: number) => p.toFixed(2),
+        timeFormatter: (time: Time) =>
+          describeOffset(timeToOffset(Number(time))),
+      },
       autoSize: true,
     });
 
@@ -286,10 +368,14 @@ export function TradingViewChart({
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
-    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    chart
+      .priceScale("volume")
+      .applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
 
-    candleSeries.setData(seed.map(toBar));
+    candleSeries.setData(chartData(seed));
     volumeSeries.setData(seed.map(toVol));
 
     chartRef.current = chart;
@@ -298,7 +384,7 @@ export function TradingViewChart({
     dataRef.current = seed;
 
     const timeScale = chart.timeScale();
-    timeScale.fitContent();
+    fitView();
 
     const handleCrosshair = (param: { time?: Time }) => {
       if (!selectRef.current) return;
@@ -315,8 +401,15 @@ export function TradingViewChart({
       if (range && countRef.current) {
         const from = Number(range.from);
         const to = Number(range.to);
-        countRef.current(dataRef.current.filter((c) => c.time >= from && c.time <= to).length);
+        countRef.current(
+          dataRef.current.filter((c) => c.time >= from && c.time <= to).length,
+        );
       }
+      const cutoffX = timeScale.timeToCoordinate(offsetToTime(0));
+      const right = chart.priceScale("right").width();
+      setBoundary(
+        cutoffX == null ? null : { left: Math.max(0, cutoffX), right },
+      );
       // Drawings are stored in chart space, so any pan/zoom needs a repaint.
       redraw();
     };
@@ -327,7 +420,10 @@ export function TradingViewChart({
     handleRange();
     setReady(true);
 
-    const onResize = () => redraw();
+    const onResize = () => {
+      handleRange();
+      redraw();
+    };
     window.addEventListener("resize", onResize);
 
     return () => {
@@ -362,7 +458,9 @@ export function TradingViewChart({
 
     // Oscillators each need their own horizontal band, or they overlap each
     // other and the volume histogram. Lay them out bottom-up in enable order.
-    const oscillators = indicators.filter((id) => indicatorDef(id)?.pane === "separate");
+    const oscillators = indicators.filter(
+      (id) => indicatorDef(id)?.pane === "separate",
+    );
     const laneFor = (id: string) => {
       const index = oscillators.indexOf(id);
       if (index === -1) return null;
@@ -389,7 +487,9 @@ export function TradingViewChart({
           // Oscillators get their own scale so they don't crush the price axis.
           priceScaleId: def.pane === "separate" ? `pane-${id}` : "right",
         });
-        line.setData(series.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+        line.setData(
+          series.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+        );
         return line;
       });
 
@@ -404,13 +504,18 @@ export function TradingViewChart({
     // the price/volume scales must give up room for the stack.
     for (const id of oscillators) {
       const lane = laneFor(id);
-      if (lane) chart.priceScale(`pane-${id}`).applyOptions({ scaleMargins: lane });
+      if (lane)
+        chart.priceScale(`pane-${id}`).applyOptions({ scaleMargins: lane });
     }
-    const stackTop = oscillators.length ? 1 - (0.2 + oscillators.length * 0.17) : 0.74;
+    const stackTop = oscillators.length
+      ? 1 - (0.2 + oscillators.length * 0.17)
+      : 0.74;
     chart.priceScale("right").applyOptions({
       scaleMargins: { top: 0.08, bottom: Math.max(0.2, 1 - stackTop) },
     });
-    chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
+    chart
+      .priceScale("volume")
+      .applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
   }, [indicators, ready]);
 
   /* -------------------------------- drawings ------------------------------- */
@@ -421,7 +526,8 @@ export function TradingViewChart({
 
   useEffect(() => {
     const canvas = overlayRef.current;
-    if (!canvas || !ready) return;
+    const host = hostRef.current;
+    if (!canvas || !host || !ready || readOnly) return;
 
     const local = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
@@ -429,6 +535,11 @@ export function TradingViewChart({
     };
 
     const onDown = (e: PointerEvent) => {
+      if (
+        e.target instanceof Element &&
+        e.target.closest("button, a, input, textarea, select")
+      )
+        return;
       const { x, y } = local(e);
       const tool = toolRef.current;
 
@@ -440,6 +551,8 @@ export function TradingViewChart({
         const hit = hitTest(projected, x, y);
         setSelectedId(hit);
         if (hit) {
+          e.preventDefault();
+          e.stopPropagation();
           const p = projected.find((q) => q.drawing.id === hit)!;
           const nearA = Math.hypot(x - p.ax, y - p.ay) <= 8;
           const nearB = Math.hypot(x - p.bx, y - p.by) <= 8;
@@ -513,13 +626,18 @@ export function TradingViewChart({
     };
 
     const onUp = (e: PointerEvent) => {
-      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      if (canvas.hasPointerCapture(e.pointerId))
+        canvas.releasePointerCapture(e.pointerId);
 
       if (draftRef.current) {
         const d = draftRef.current;
         draftRef.current = null;
         // A horizontal line is a single click; everything else needs a drag.
-        if (d.kind === "horizontal" || d.a.time !== d.b.time || d.a.price !== d.b.price) {
+        if (
+          d.kind === "horizontal" ||
+          d.a.time !== d.b.time ||
+          d.a.price !== d.b.price
+        ) {
           onChangeRef.current?.([...drawingsRef.current, d]);
           setSelectedId(d.id);
         }
@@ -535,8 +653,13 @@ export function TradingViewChart({
       // Never swallow Backspace while the user is typing in a field.
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedRef.current) {
-        onChangeRef.current?.(drawingsRef.current.filter((d) => d.id !== selectedRef.current));
+      if (
+        (e.key === "Delete" || e.key === "Backspace") &&
+        selectedRef.current
+      ) {
+        onChangeRef.current?.(
+          drawingsRef.current.filter((d) => d.id !== selectedRef.current),
+        );
         setSelectedId(null);
       }
       if (e.key === "Escape") {
@@ -546,27 +669,23 @@ export function TradingViewChart({
       }
     };
 
-    canvas.addEventListener("pointerdown", onDown);
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerup", onUp);
+    host.addEventListener("pointerdown", onDown, true);
+    host.addEventListener("pointermove", onMove, true);
+    host.addEventListener("pointerup", onUp, true);
     window.addEventListener("keydown", onKey);
     return () => {
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
+      host.removeEventListener("pointerdown", onDown, true);
+      host.removeEventListener("pointermove", onMove, true);
+      host.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("keydown", onKey);
     };
-  }, [ready, toScreen, fromScreen, redraw]);
+  }, [ready, toScreen, fromScreen, redraw, readOnly]);
 
   return (
-    <div className="relative h-full w-full bg-ground">
+    <div ref={hostRef} className="relative h-full w-full bg-ground">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/*
-        The overlay only intercepts pointer events while a drawing tool is armed
-        or a shape exists to select; otherwise it stays transparent so the chart
-        keeps its own pan and zoom.
-      */}
+      {/* Unarmed chart gestures pass through; the host captures drawing hits. */}
       <canvas
         ref={overlayRef}
         className="absolute inset-0"
@@ -574,12 +693,47 @@ export function TradingViewChart({
           // The chart's own canvases are positioned, so the overlay needs an
           // explicit stacking order to sit above them and receive pointers.
           zIndex: 3,
-          pointerEvents: activeTool !== null || drawings.length > 0 ? "auto" : "none",
+          pointerEvents: !readOnly && activeTool !== null ? "auto" : "none",
           cursor: activeTool !== null ? "crosshair" : "default",
         }}
       />
 
-      {showBoundary && ready && !error && <ReplayBoundary />}
+      {boundary && ready && !error && (
+        <ReplayBoundary
+          {...boundary}
+          horizon={horizon}
+          revealed={!showBoundary}
+        />
+      )}
+      {selectedId && !readOnly && (
+        <div className="control-surface absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-xl p-2 text-tiny">
+          <span>
+            Selected: {drawings.find((d) => d.id === selectedId)?.kind}
+          </span>
+          <button
+            className="min-h-touch px-2"
+            onClick={() => {
+              const source = drawings.find((d) => d.id === selectedId);
+              if (source)
+                onDrawingsChange?.([
+                  ...drawings,
+                  { ...source, id: crypto.randomUUID() },
+                ]);
+            }}
+          >
+            Duplicate
+          </button>
+          <button
+            className="min-h-touch px-2 text-bear"
+            onClick={() => {
+              onDrawingsChange?.(drawings.filter((d) => d.id !== selectedId));
+              setSelectedId(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
 
       {!ready && !error && (
         <div className="absolute inset-0 p-4">

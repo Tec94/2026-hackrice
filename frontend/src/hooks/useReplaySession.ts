@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as C from "@hackrice/contracts";
 import type { z } from "zod";
 import { request, isApiError } from "@/services/api-client";
-import { toChartCandles, type ChartCandle, type Timeframe } from "@/adapters/chart";
+import {
+  toChartCandles,
+  type ChartCandle,
+  type Timeframe,
+} from "@/adapters/chart";
 
 type Session = z.infer<typeof C.PublicSession>;
 type Snapshot = z.infer<typeof C.ChartSnapshot>;
@@ -20,14 +24,16 @@ export interface ReplaySessionState {
 }
 
 const MESSAGES: Partial<Record<z.infer<typeof C.ErrorCode>, string>> = {
-  insufficient_data: "Not enough imported history for this timeframe. Run the candle import for a wider range.",
+  insufficient_data:
+    "Not enough imported history for this timeframe. Run the candle import for a wider range.",
   not_found: "That session does not exist, or belongs to another account.",
   session_expired: "This session has expired. Start a new one.",
   provider_unavailable: "The API is unreachable. Check that it is running.",
 };
 
 function messageFor(error: unknown): string {
-  if (isApiError(error)) return MESSAGES[error.code] ?? `Request failed (${error.code}).`;
+  if (isApiError(error))
+    return MESSAGES[error.code] ?? `Request failed (${error.code}).`;
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
@@ -51,50 +57,83 @@ export function useReplaySession(sessionId: string | null) {
   /** Guards against a slow response overwriting a newer one. */
   const requestSeq = useRef(0);
 
-  const load = useCallback(
-    async (id: string, timeframe?: Timeframe) => {
-      const seq = ++requestSeq.current;
-      setState((s) => ({ ...s, loading: true, error: null }));
+  const load = useCallback(async (id: string, timeframe?: Timeframe) => {
+    const seq = ++requestSeq.current;
+    setState((s) => ({ ...s, loading: true, error: null }));
 
-      try {
-        const session = await request("getSession", { params: { sessionId: id } });
-        let snapshot = await request("getChartContext", { params: { sessionId: id } });
-        const tf = timeframe ?? session.timeframe;
-        if (timeframe && timeframe !== snapshot.timeframe) {
-          const { id: snapshotId, sessionId: ownerId, revision, ...context } = snapshot;
-          snapshot = await request("updateChartContext", { params: { sessionId: id }, body: { ...context, timeframe, expectedRevision: revision, selectedCandleOffsetMinutes: undefined, drawings: [] } });
-          session.timeframe = timeframe;
-          session.latestChartRevision = snapshot.revision;
-        }
-
-        const bars = await request("getBars", {
+    try {
+      const session = await request("getSession", {
+        params: { sessionId: id },
+      });
+      let snapshot = await request("getChartContext", {
+        params: { sessionId: id },
+      });
+      if (session.status !== "exploring") {
+        const history = await request("getHistory", {
           params: { sessionId: id },
-          query: { timeframe: tf, from: session.chartRange.from, to: session.chartRange.to },
         });
-
-        if (seq !== requestSeq.current) return;
-        setState({
-          session,
-          candles: toChartCandles(bars.bars),
-          snapshot,
-          loading: false,
-          error: null,
-          unauthenticated: false,
-        });
-      } catch (error) {
-        if (seq !== requestSeq.current) return;
-        setState({
-          session: null,
-          candles: [],
-          snapshot: null,
-          loading: false,
-          error: messageFor(error),
-          unauthenticated: isApiError(error, "unauthenticated"),
-        });
+        const committedId = history.submissions[0]?.submission.chartSnapshotId;
+        if (committedId)
+          snapshot = await request("getChartContext", {
+            params: { sessionId: id },
+            query: { chartSnapshotId: committedId },
+          });
       }
-    },
-    [],
-  );
+      const tf = timeframe ?? session.timeframe;
+      if (timeframe && timeframe !== snapshot.timeframe) {
+        const {
+          id: snapshotId,
+          sessionId: ownerId,
+          revision,
+          ...context
+        } = snapshot;
+        snapshot = await request("updateChartContext", {
+          params: { sessionId: id },
+          body: {
+            ...context,
+            timeframe,
+            expectedRevision: revision,
+            selectedCandleOffsetMinutes: undefined,
+            drawings: [],
+            appearance: context.appearance
+              ? { ...context.appearance, drawings: [] }
+              : undefined,
+          },
+        });
+        session.timeframe = timeframe;
+        session.latestChartRevision = snapshot.revision;
+      }
+
+      const bars = await request("getBars", {
+        params: { sessionId: id },
+        query: {
+          timeframe: tf,
+          from: session.chartRange.from,
+          to: Math.min(0, session.chartRange.to),
+        },
+      });
+
+      if (seq !== requestSeq.current) return;
+      setState({
+        session,
+        candles: toChartCandles(bars.bars),
+        snapshot,
+        loading: false,
+        error: null,
+        unauthenticated: false,
+      });
+    } catch (error) {
+      if (seq !== requestSeq.current) return;
+      setState({
+        session: null,
+        candles: [],
+        snapshot: null,
+        loading: false,
+        error: messageFor(error),
+        unauthenticated: isApiError(error, "unauthenticated"),
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!sessionId) {
@@ -121,6 +160,8 @@ export async function createSession(
   timeframe: Timeframe,
   predictionHorizon: Timeframe,
 ): Promise<string> {
-  const session = await request("createSession", { body: { timeframe, predictionHorizon } });
+  const session = await request("createSession", {
+    body: { timeframe, predictionHorizon },
+  });
   return session.id;
 }

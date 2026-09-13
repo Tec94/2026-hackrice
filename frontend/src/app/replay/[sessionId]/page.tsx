@@ -1,37 +1,34 @@
 "use client";
-
 import dynamic from "next/dynamic";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ReplayHeader } from "@/components/layout/ReplayHeader";
-import { ChartToolbar } from "@/components/chart/ChartToolbar";
-import { ChartStatusBar } from "@/components/chart/ChartStatusBar";
+import { AppHeader } from "@/components/layout/AppHeader";
+import { ChartToolbar, DrawingRail } from "@/components/chart/ChartToolbar";
 import { CoachSidebar } from "@/components/voice/CoachSidebar";
-import { Button, ErrorBanner, Skeleton, Tabs } from "@/components/ui";
-import { indicatorDef } from "@/components/chart/indicators";
-import type { ActiveTool, ChartHandle } from "@/components/chart/TradingViewChart";
+import { Button, ErrorBanner, Skeleton } from "@/components/ui";
+import { computeIndicator, indicatorDef } from "@/components/chart/indicators";
+import type {
+  ActiveTool,
+  ChartHandle,
+} from "@/components/chart/TradingViewChart";
 import type { Drawing } from "@/components/chart/drawings";
 import { useReplaySession } from "@/hooks/useReplaySession";
-import type { ChartCandle, Timeframe } from "@/adapters/chart";
-import { timeToOffset } from "@/adapters/chart";
+import {
+  describeOffset,
+  timeToOffset,
+  type ChartCandle,
+  type Timeframe,
+} from "@/adapters/chart";
+import { snapshotDrawings, snapshotIndicators } from "@/adapters/snapshot";
 import { request } from "@/services/api-client";
-import { ChartContextInput } from "@hackrice/contracts";
-
-/** The chart touches `document` on init, so it must never render on the server. */
+import { ChartContextInput, type ChartContext } from "@hackrice/contracts";
 const TradingViewChart = dynamic(
-  () => import("@/components/chart/TradingViewChart").then((m) => m.TradingViewChart),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-full w-full p-4">
-        <Skeleton className="h-full w-full" />
-      </div>
+  () =>
+    import("@/components/chart/TradingViewChart").then(
+      (m) => m.TradingViewChart,
     ),
-  },
+  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> },
 );
-
-type MobileTab = "chart" | "coach";
-
 export default function ReplaySessionPage({
   params,
 }: {
@@ -39,156 +36,341 @@ export default function ReplaySessionPage({
 }) {
   const { sessionId } = use(params);
   const router = useRouter();
-
-  const { session, candles, loading, error, unauthenticated, reload, changeTimeframe } =
-    useReplaySession(sessionId);
-
+  const {
+    session,
+    candles,
+    snapshot,
+    loading,
+    error,
+    unauthenticated,
+    reload,
+    changeTimeframe,
+  } = useReplaySession(sessionId);
   const [selected, setSelected] = useState<ChartCandle | null>(null);
-  const [visibleCount, setVisibleCount] = useState(0);
-  const [tab, setTab] = useState<MobileTab>("chart");
-
   const [activeTool, setActiveTool] = useState<ActiveTool>(null);
   const [indicators, setIndicators] = useState<string[]>(["ema21"]);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
-
+  const [saved, setSaved] = useState<ChartContext | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const chartRef = useRef<ChartHandle>(null);
-  const captureContext = useCallback(async () => {
-    if (!session) throw new Error("Wait for the chart to load.");
-    const current = await request("getChartContext", { params: { sessionId } });
-    const visible = chartRef.current?.visibleCandles() ?? candles;
-    if (!visible.length) throw new Error("Pan back to the historical candles before asking.");
-    const from = visible[0].offsetMinutes;
-    const to = Math.min(0, visible[visible.length - 1].offsetMinutes + ({ "5m": 5, "15m": 15, "1h": 60 }[session.timeframe]));
-    return request("updateChartContext", { params: { sessionId }, body: ChartContextInput.parse({
-      expectedRevision: current.revision, timeframe: session.timeframe, visibleRange: { from, to },
-      ...(selected && selected.offsetMinutes >= from && selected.offsetMinutes < to ? { selectedCandleOffsetMinutes: selected.offsetMinutes } : {}),
-      indicators: indicators.flatMap(id => id === "ema21" ? [{ name: "ema", period: 21 }] : id === "rsi14" ? [{ name: "rsi", period: 14 }] : []),
-      drawings: drawings.filter(d => d.kind === "horizontal" || d.kind === "trendline").map(d => d.kind === "horizontal"
-        ? { id: d.id, type: "horizontal_line", price: String(d.a.price) }
-        : { id: d.id, type: "trendline", start: { offsetMinutes: timeToOffset(d.a.time), price: String(d.a.price) }, end: { offsetMinutes: timeToOffset(d.b.time), price: String(d.b.price) } }),
-    }) });
-  }, [session, sessionId, candles, selected, indicators, drawings]);
-
-  // Send the user to sign-in when the session cookie is missing or expired.
+  const readOnly = !!session && session.status !== "exploring";
   useEffect(() => {
-    if (unauthenticated) {
-      router.push(`/sign-in?next=${encodeURIComponent(`/replay/${sessionId}`)}`);
+    if (snapshot) {
+      setIndicators(
+        snapshot.appearance
+          ? snapshotIndicators(snapshot)
+          : snapshot.revision === 0
+            ? ["ema21"]
+            : snapshotIndicators(snapshot),
+      );
+      setDrawings(snapshotDrawings(snapshot));
+      setSaved(snapshot);
+      setDirty(false);
+      setSelected(
+        candles.find(
+          (c) => c.offsetMinutes === snapshot.selectedCandleOffsetMinutes,
+        ) ?? null,
+      );
     }
+  }, [snapshot]);
+  useEffect(() => {
+    if (unauthenticated)
+      router.replace(
+        `/sign-in?next=${encodeURIComponent(`/replay/${sessionId}`)}`,
+      );
   }, [unauthenticated, router, sessionId]);
-
-  // Feed newly fetched bars into the existing chart instance.
   useEffect(() => {
     if (candles.length) chartRef.current?.setCandles(candles);
   }, [candles]);
-
-  const onTimeframeChange = useCallback(
-    (timeframe: Timeframe) => {
-      setDrawings([]);
-      setSelected(null);
-      void changeTimeframe(timeframe);
-    },
-    [changeTimeframe],
-  );
-
-  if (error && !unauthenticated) {
-    return (
-      <div className="flex h-screen flex-col bg-ground">
-        <ReplayHeader phase="explore" />
-        <div className="grid flex-1 place-items-center p-6">
-          <div className="w-full max-w-md space-y-3">
-            <ErrorBanner
-              title="Could not load this session"
-              message={error}
-              onRetry={() => void reload(sessionId)}
-            />
-            <Button variant="ghost" onClick={() => router.push("/")}>
-              Back to markets
-            </Button>
-          </div>
-        </div>
-      </div>
+  const captureContext = useCallback(async () => {
+    if (!session || !saved) throw new Error("Wait for the chart to load.");
+    if (readOnly) return saved;
+    const current = await request("getChartContext", { params: { sessionId } });
+    const visible = chartRef.current?.visibleCandles() ?? candles;
+    if (!visible.length)
+      throw new Error("Pan back to the historical candles before asking.");
+    const from = visible[0].offsetMinutes;
+    const to = Math.min(
+      0,
+      visible[visible.length - 1].offsetMinutes +
+        { "5m": 5, "15m": 15, "1h": 60 }[session.timeframe],
     );
-  }
-
+    const snapPoint = (point: Drawing["a"]) => {
+      const nearest = candles.reduce(
+        (best, c) =>
+          Math.abs(c.time - point.time) < Math.abs(best.time - point.time)
+            ? c
+            : best,
+        candles[0],
+      );
+      return {
+        offsetMinutes: nearest.offsetMinutes,
+        price: String(Math.max(0, point.price)),
+      };
+    };
+    const result = await request("updateChartContext", {
+      params: { sessionId },
+      body: ChartContextInput.parse({
+        expectedRevision: current.revision,
+        timeframe: session.timeframe,
+        visibleRange: { from, to },
+        ...(selected &&
+        selected.offsetMinutes >= from &&
+        selected.offsetMinutes < to
+          ? { selectedCandleOffsetMinutes: selected.offsetMinutes }
+          : {}),
+        indicators: indicators.flatMap((id) =>
+          id === "ema21"
+            ? [{ name: "ema", period: 21 }]
+            : id === "rsi14"
+              ? [{ name: "rsi", period: 14 }]
+              : [],
+        ),
+        drawings: drawings.flatMap<ChartContext["drawings"][number]>((d) =>
+          d.kind === "horizontal"
+            ? [
+                {
+                  id: d.id,
+                  type: "horizontal_line",
+                  price: String(Math.max(0, d.a.price)),
+                },
+              ]
+            : d.kind === "trendline" &&
+                snapPoint(d.a).offsetMinutes !== snapPoint(d.b).offsetMinutes
+              ? [
+                  {
+                    id: d.id,
+                    type: "trendline",
+                    start: snapPoint(d.a),
+                    end: snapPoint(d.b),
+                  },
+                ]
+              : [],
+        ),
+        appearance: {
+          indicatorIds: indicators,
+          drawings: drawings.map((d) => ({
+            id: d.id,
+            kind: d.kind,
+            a: snapPoint(d.a),
+            b: snapPoint(d.b),
+          })),
+        },
+      }),
+    });
+    setSaved(result);
+    setDirty(false);
+    setSaveError("");
+    return result;
+  }, [
+    session,
+    saved,
+    readOnly,
+    sessionId,
+    candles,
+    selected,
+    indicators,
+    drawings,
+  ]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await captureContext();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Could not save chart.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const candle = selected ?? candles.at(-1);
+  const values = candle
+    ? [
+        ["Direction", candle.close >= candle.open ? "▲ Up" : "▼ Down"],
+        ["Open", candle.open.toFixed(2)],
+        ["High", candle.high.toFixed(2)],
+        ["Low", candle.low.toFixed(2)],
+        ["Close", candle.close.toFixed(2)],
+        ["Volume", candle.volume.toLocaleString()],
+      ]
+    : [];
+  const candlePanel = (
+    <section className="bench-bay candle-bay surface-inset">
+      <header className="bay-header">
+        <h2>Selected candle</h2>
+        <span className="text-micro text-ink-muted">{session?.timeframe}</span>
+      </header>
+      <div className="bay-scroll">
+        <p className="mb-3 text-micro text-ink-faint">
+          {candle ? describeOffset(candle.offsetMinutes) : "Select a candle"}
+        </p>
+        <dl className="candle-values">
+          {values.map(([label, value]) => (
+            <div className="contents" key={label}>
+              <dt>{label}</dt>
+              <dd
+                className={
+                  label === "Direction"
+                    ? candle!.close >= candle!.open
+                      ? "text-bull"
+                      : "text-bear"
+                    : ""
+                }
+              >
+                {value}
+              </dd>
+            </div>
+          ))}
+          {indicators.map((id) => {
+            const point = computeIndicator(id, candles)[0]?.find(
+              (p) => p.time === candle?.time,
+            );
+            return (
+              <div className="contents" key={id}>
+                <dt>{indicatorDef(id)?.short}</dt>
+                <dd>{point ? point.value.toFixed(2) : "—"}</dd>
+              </div>
+            );
+          })}
+          <dt>Drawings</dt>
+          <dd>{drawings.length}</dd>
+        </dl>
+      </div>
+      <footer className="bay-footer">
+        <p className="text-micro text-ink-muted">
+          {dirty ? "Unsaved changes" : readOnly ? "Frozen" : "Synced"} ·
+          snapshot r{saved?.revision ?? 0}
+        </p>
+        {!readOnly && dirty && (
+          <Button
+            className="mt-2 w-full text-tiny"
+            disabled={saving}
+            onClick={save}
+          >
+            {saving ? "Saving…" : "Save chart"}
+          </Button>
+        )}
+      </footer>
+    </section>
+  );
   return (
-    <div className="replay-shell flex flex-col overflow-hidden bg-ground">
+    <div className="replay-shell">
       <a href="#workspace" className="skip-link">
         Skip to chart workspace
       </a>
-
-      <ReplayHeader
-        symbol={session?.symbol ?? "SOL/USDT"}
-        timeframe={session?.timeframe}
-        onTimeframeChange={!loading && session?.status === "exploring" ? onTimeframeChange : undefined}
-        connected={!!session && !error}
-        phase="explore"
+      <AppHeader
+        status={session?.status ?? "exploring"}
+        timeframe={session?.timeframe ?? "15m"}
+        horizon={session?.predictionHorizon ?? "1h"}
       />
-
-      <main
-        id="workspace"
-        className="flex min-h-0 flex-1 flex-col gap-px bg-ground lg:grid lg:grid-cols-workspace"
-      >
-        <div className="px-3 py-2 lg:hidden">
-          <Tabs
-            tabs={[
-              { id: "chart", label: "Chart" },
-              { id: "coach", label: "Coach" },
-            ]}
-            active={tab}
-            onChange={setTab}
+      {error && !unauthenticated ? (
+        <main className="grid flex-1 place-content-center gap-4 p-6">
+          <ErrorBanner
+            title="Could not load this session"
+            message={error}
+            onRetry={() => void reload(sessionId)}
           />
-        </div>
-
-        <section
-          className={`min-h-0 flex-1 flex-col ${tab === "chart" ? "flex" : "hidden"} lg:flex`}
-          aria-label="Chart workspace"
-        >
-          <ChartToolbar
-            activeTool={activeTool}
-            onToolChange={setActiveTool}
-            indicators={indicators}
-            onIndicatorsChange={setIndicators}
-            drawingCount={drawings.length}
-            onClearDrawings={() => setDrawings([])}
-            onResetView={() => chartRef.current?.resetView()}
-            onToggleFullscreen={() => {
-              if (document.fullscreenElement) void document.exitFullscreen();
-              else void document.getElementById("workspace")?.requestFullscreen();
-            }}
-          />
-          <div className="relative min-h-0 flex-1">
-            {loading && !candles.length ? (
-              <div className="h-full w-full p-4">
+          <Button onClick={() => router.push("/#markets")}>
+            Back to markets
+          </Button>
+        </main>
+      ) : (
+        <main id="workspace" className="workspace">
+          <section
+            id="chart-stage"
+            className="chart-stage"
+            aria-label="Chart workspace"
+          >
+            <ChartToolbar
+              activeTool={activeTool}
+              onToolChange={setActiveTool}
+              indicators={indicators}
+              onIndicatorsChange={(ids) => {
+                setIndicators(ids);
+                setDirty(true);
+              }}
+              drawingCount={drawings.length}
+              onClearDrawings={() => {
+                setDrawings([]);
+                setDirty(true);
+              }}
+              onResetView={() => chartRef.current?.resetView()}
+              onToggleFullscreen={() => {
+                if (document.fullscreenElement) void document.exitFullscreen();
+                else
+                  void document
+                    .getElementById("chart-stage")
+                    ?.requestFullscreen();
+              }}
+              timeframe={session?.timeframe ?? "15m"}
+              onTimeframeChange={
+                readOnly
+                  ? undefined
+                  : (tf) => {
+                      setSelected(null);
+                      void changeTimeframe(tf);
+                    }
+              }
+              readOnly={readOnly}
+            />
+            <div className="chart-canvas">
+              {loading ? (
                 <Skeleton className="h-full w-full" />
-                <span className="sr-only">Loading session…</span>
-              </div>
-            ) : (
-              <TradingViewChart
-                ref={chartRef}
-                initialCandles={candles}
-                onSelectCandle={setSelected}
-                onVisibleCountChange={setVisibleCount}
-                indicators={indicators}
-                activeTool={activeTool}
-                drawings={drawings}
-                onDrawingsChange={setDrawings}
-                onDrawingComplete={() => setActiveTool(null)}
+              ) : (
+                <TradingViewChart
+                  key={session?.timeframe}
+                  ref={chartRef}
+                  initialCandles={candles}
+                  onSelectCandle={(c) => {
+                    if (c) setSelected(c);
+                  }}
+                  indicators={indicators}
+                  activeTool={activeTool}
+                  drawings={drawings}
+                  onDrawingsChange={(items) => {
+                    setDrawings(items);
+                    setDirty(true);
+                  }}
+                  onDrawingComplete={() => setActiveTool(null)}
+                  readOnly={readOnly}
+                  horizon={session?.predictionHorizon}
+                />
+              )}
+              {!readOnly && (
+                <DrawingRail
+                  activeTool={activeTool}
+                  onToolChange={setActiveTool}
+                  drawingCount={drawings.length}
+                  onClearDrawings={() => {
+                    setDrawings([]);
+                    setDirty(true);
+                  }}
+                />
+              )}
+            </div>
+            {saveError && (
+              <ErrorBanner
+                title="Chart not saved"
+                message={saveError}
+                onRetry={save}
               />
             )}
-          </div>
-          <ChartStatusBar
-            visibleCount={visibleCount}
-            selected={selected}
-            indicators={indicators.map((id) => indicatorDef(id)?.short ?? id)}
-            drawingCount={drawings.length}
-          />
-        </section>
-
-        <div className={`min-h-0 flex-1 flex-col ${tab === "coach" ? "flex" : "hidden"} lg:flex`}>
-          {session?.status === "exploring" ? <CoachSidebar sessionId={sessionId} captureContext={captureContext} disabled={loading} /> :
-            <div className="space-y-3 p-5"><p className="text-ink-muted">{session ? "Your analysis is already committed." : "Loading session…"}</p>{session && <Button onClick={() => router.push(`/replay/${sessionId}/feedback`)}>View feedback</Button>}</div>}
-        </div>
-      </main>
+          </section>
+          {session && saved ? (
+            <CoachSidebar
+              sessionId={sessionId}
+              captureContext={captureContext}
+              disabled={loading}
+              readOnly={readOnly}
+              revision={saved.revision}
+              candlePanel={candlePanel}
+            />
+          ) : (
+            <Skeleton className="h-64 w-full" />
+          )}
+        </main>
+      )}
     </div>
   );
 }

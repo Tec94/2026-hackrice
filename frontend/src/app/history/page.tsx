@@ -1,75 +1,163 @@
 "use client";
-
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui";
 import { SessionHistoryCard } from "@/components/history/SessionHistoryCard";
-import type { SessionRow } from "@/components/history/sample-sessions";
+import type { Session } from "@hackrice/contracts";
 import { request, isApiError } from "@/services/api-client";
-
-export default function SessionHistoryPage() {
+export default function HistoryPage() {
+  return (
+    <Suspense fallback={<p role="status">Loading your record…</p>}>
+      <SessionHistoryPage />
+    </Suspense>
+  );
+}
+function SessionHistoryPage() {
   const router = useRouter();
-  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    setError(null);
+  const params = useSearchParams();
+  const archived = params.get("view") === "archived";
+  const [filter, setFilter] = useState("all");
+  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    setError("");
     try {
       setSessions(await request("listSessions"));
     } catch (e) {
-      if (isApiError(e, "unauthenticated")) {
-        router.push("/sign-in?next=%2Fhistory");
-        return;
-      }
-      setError(e instanceof Error ? e.message : "Could not load your sessions.");
+      if (isApiError(e, "unauthenticated"))
+        router.replace(
+          `/sign-in?next=${encodeURIComponent(archived ? "/history?view=archived" : "/history")}`,
+        );
+      else setError("Could not load your sessions.");
     }
-  };
-
+  }, [router, archived]);
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  }, [load]);
+  const inView = sessions?.filter((s) => !!s.archived === archived) ?? [];
+  const shown = inView.filter(
+    (s) =>
+      filter === "all" ||
+      (filter === "completed"
+        ? s.status === "completed"
+        : s.status !== "completed"),
+  );
   return (
-    <div className="mx-auto min-h-screen w-full max-w-4xl px-6 py-12">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-title font-semibold tracking-tight text-ink">Your record</h1>
-          <p className="mt-1 text-base text-ink-muted">Every replay session on your account.</p>
+    <div className="min-h-dvh">
+      <AppHeader />
+      <main className="page-shell py-12">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-5">
+          <div>
+            <h1 className="text-[30px] font-semibold tracking-tight">
+              {archived ? "Archived sessions" : "Your record"}
+            </h1>
+            <p className="mt-2 text-tiny text-ink-muted">
+              {sessions ? `${inView.length} sessions · ` : ""}kept for 30 days
+              from creation
+              {archived ? " · restore at any time before expiry" : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="segmented" aria-label="Filter sessions">
+              {[
+                ["all", "All"],
+                ["progress", "In progress"],
+                ["completed", "Completed"],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  aria-pressed={filter === id}
+                  onClick={() => setFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Link
+              href={archived ? "/history" : "/history?view=archived"}
+              className="text-tiny text-ink-muted"
+            >
+              {archived ? "Your record" : "Archived"}
+            </Link>
+            <Link
+              href="/start"
+              className="button-primary motion-control inline-flex min-h-touch items-center rounded-xl px-4 text-tiny"
+            >
+              New replay
+            </Link>
+          </div>
         </div>
-        <Link
-          href="/"
-          className="inline-flex min-h-touch items-center rounded-lg px-4 text-base text-ink-muted transition-colors hover:bg-panel hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 motion-reduce:transition-none"
-        >
-          Start a session
-        </Link>
-      </header>
-
-      {error && <ErrorBanner title="Could not load sessions" message={error} onRetry={load} />}
-
-      {!sessions && !error && (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-24 w-full" />
+        {error && (
+          <div className="mb-4">
+            <ErrorBanner
+              title="Could not update your record"
+              message={error}
+              onRetry={load}
+            />
+          </div>
+        )}
+        {!sessions && !error && <Skeleton className="h-64 w-full" />}
+        {sessions && shown.length === 0 && (
+          <EmptyState
+            title={
+              archived
+                ? "No archived sessions"
+                : inView.length
+                  ? "No sessions in this view"
+                  : "Your first read starts here"
+            }
+            message={
+              archived
+                ? "Archived sessions will appear here. Archiving does not extend their expiry."
+                : inView.length
+                  ? "Choose another filter to see your sessions."
+                  : "Start a replay and your record will grow with every session."
+            }
+            action={
+              !archived && (
+                <Link className="mt-3 text-accent-300" href="/start">
+                  Start a replay →
+                </Link>
+              )
+            }
+          />
+        )}
+        <div className="record-grid">
+          {shown.map((session, i) => (
+            <div
+              className="stagger-item"
+              style={{ "--i": i } as React.CSSProperties}
+              key={session.id}
+            >
+              <SessionHistoryCard
+                session={session}
+                onArchive={async (selected) => {
+                  try {
+                    const updated = await request("setArchived", {
+                      params: { sessionId: selected.id },
+                      body: { archived: !selected.archived },
+                    });
+                    setSessions(
+                      (current) =>
+                        current?.map((s) =>
+                          s.id === updated.id ? updated : s,
+                        ) ?? null,
+                    );
+                  } catch {
+                    setError(
+                      selected.archived
+                        ? "Could not restore this session. Please try again."
+                        : "Could not archive this session. Please try again.",
+                    );
+                  }
+                }}
+              />
+            </div>
           ))}
         </div>
-      )}
-
-      {sessions?.length === 0 && (
-        <EmptyState
-          title="No sessions yet"
-          message="Start a replay from the home page and your record will appear here."
-        />
-      )}
-
-      {sessions && sessions.length > 0 && (
-        <div className="space-y-2">
-          {sessions.map((session) => (
-            <SessionHistoryCard key={session.id} session={session} />
-          ))}
-        </div>
-      )}
+      </main>
     </div>
   );
 }

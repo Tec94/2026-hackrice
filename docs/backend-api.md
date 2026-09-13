@@ -98,6 +98,7 @@ their local row remains. After removal, those resources return 404.
 | Operation | Method and path |
 | --- | --- |
 | Create/list sessions | `POST` / `GET /api/sessions` |
+| Archive/restore session | `PUT /api/sessions/:sessionId/archive` with `{archived: boolean}` |
 | Read/delete session | `GET` / `DELETE /api/sessions/:sessionId` |
 | Read/save chart snapshot | `GET` / `PATCH /api/sessions/:sessionId/chart-context` |
 | Complete candles | `GET /api/sessions/:sessionId/chart/bars?timeframe=5m&from=-60&to=0` |
@@ -246,3 +247,34 @@ Its Solana provider uses a mocked RPC that changes from pending to confirmed;
 no real transaction or live voice/memory call is made. Run `npm test` for the
 whole repository test suite. These checks do not prove deployed TigerData,
 provider retention, or live speech behavior.
+
+
+## Design-system integration
+
+The archive operation is authenticated, owner-scoped, and idempotent. It stores an
+optional `archived` flag inside the existing session JSON, so existing databases
+need no new table migration. Listing returns both active and archived records;
+the UI selects the requested view. Archive and restore preserve the four-state
+lifecycle and the original expiry. Archive never invokes deletion jobs.
+
+`GET chart-context` accepts an optional `chartSnapshotId` for any owned frozen
+snapshot. History includes owned snapshots and the calculated fact records used
+by turns and evidence findings. Before reveal, those still contain only relative
+past offsets and no source dates or future prices. Chart-context inputs may carry
+optional `appearance` (visual indicator IDs and drawing anchors). Appearance is
+saved for rendering; the existing `indicators` and `drawings` fields remain the
+calculator inputs. This keeps visual-only overlays out of coach calculations.
+
+New sessions initialize the visible EMA 21. Explicit evidence may compare a
+supported metric with a decimal or another supported metric of the same unit,
+for example `close > ema 21`. Unsupported comparisons and prose remain not
+assessable. Compound supported coach questions such as `RSI 14 and close` return
+both computed facts from one snapshot. The new UI shows findings and reason
+codes without presenting an overall score. The preexisting optional rating
+endpoints remain available; their scores are not rendered by the new screens.
+
+Flat is the existing exact equality between the horizon close and cutoff close.
+The UI never interprets the illustrative ±0.25% band as policy. Free-text
+invalidation remains unassessed. Reflection is read back on completed-session
+review. A voice failure now releases the microphone; ordinary turn completion
+retains it only while the user keeps the conversation open.

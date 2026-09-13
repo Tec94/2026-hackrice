@@ -1,31 +1,24 @@
 "use client";
-
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import type { z } from "zod";
 import type * as C from "@hackrice/contracts";
-import { ReplayHeader } from "@/components/layout/ReplayHeader";
-import { Badge, Button, Card, ErrorBanner, Skeleton, Textarea } from "@/components/ui";
+import { AppHeader } from "@/components/layout/AppHeader";
+import { Button, ErrorBanner, Skeleton, Textarea } from "@/components/ui";
 import { request, isApiError } from "@/services/api-client";
-import { useCoachRating } from "@/hooks/useCoachRating";
 import { toChartCandles, type ChartCandle } from "@/adapters/chart";
-
+import { snapshotDrawings, snapshotIndicators } from "@/adapters/snapshot";
+import type { ChartHandle } from "@/components/chart/TradingViewChart";
 const TradingViewChart = dynamic(
-  () => import("@/components/chart/TradingViewChart").then((m) => m.TradingViewChart),
-  { ssr: false, loading: () => <Skeleton className="h-full w-full" /> },
+  () =>
+    import("@/components/chart/TradingViewChart").then(
+      (m) => m.TradingViewChart,
+    ),
+  { ssr: false },
 );
-
-type Reveal = z.infer<typeof C.Reveal>;
-
-const DIRECTION = {
-  higher: { label: "Resolved higher", Icon: ArrowUp, tone: "bull" as const },
-  lower: { label: "Resolved lower", Icon: ArrowDown, tone: "bear" as const },
-  unchanged: { label: "Resolved flat", Icon: Minus, tone: "neutral" as const },
-};
-
+const direction = { higher: "Higher ▲", lower: "Lower ▼", unchanged: "Flat —" };
 export default function OutcomeRevealPage({
   params,
 }: {
@@ -33,226 +26,285 @@ export default function OutcomeRevealPage({
 }) {
   const { sessionId } = use(params);
   const router = useRouter();
-  const [saving, setSaving] = useState(false);
-
-  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const [reveal, setReveal] = useState<z.infer<typeof C.Reveal> | null>(null);
+  const [history, setHistory] = useState<z.infer<typeof C.History> | null>(
+    null,
+  );
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [reflection, setReflection] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [evaluation, setEvaluation] = useState<C.AnalysisEvaluation | null>(null);
-  // The outcome rating starts when the reveal is granted and lands a moment
-  // later, so wait for it briefly before offering to ask for it.
-  const coach = useCoachRating(sessionId, evaluation, { waitFor: "outcome_judgment", patience: 8 });
-
-  /**
-   * Reveal is a server-authorized transition. Once it succeeds the session's
-   * `chartRange` extends past the cutoff, so bars are refetched to pick up the
-   * newly permitted future candles.
-   */
+  const [saving, setSaving] = useState(false);
+  const [showDrawings, setShowDrawings] = useState(true);
+  const chart = useRef<ChartHandle>(null);
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setError("");
     try {
       const result = await request("reveal", { params: { sessionId } });
-      setReveal(result);
-
-      const bars = await request("getBars", {
-        params: { sessionId },
-        query: {
-          timeframe: result.session.timeframe,
-          from: result.session.chartRange.from,
-          to: result.session.chartRange.to,
-        },
-      });
+      const [bars, h] = await Promise.all([
+        request("getBars", {
+          params: { sessionId },
+          query: {
+            timeframe: result.session.timeframe,
+            from: result.session.chartRange.from,
+            to: result.session.chartRange.to,
+          },
+        }),
+        request("getHistory", { params: { sessionId } }),
+      ]);
       setCandles(toChartCandles(bars.bars));
-      const history = await request("getHistory", { params: { sessionId } });
-      setEvaluation(history.evaluations[0] ?? null);
+      setHistory(h);
+      setReflection(h.reflection?.text ?? "");
+      setReveal(result);
     } catch (e) {
-      setError(
-        isApiError(e, "state_conflict")
-          ? "Reveal requires a submitted analysis and a confirmed Solana devnet receipt. Check the receipt on the feedback page."
-          : e instanceof Error
-            ? e.message
-            : "Could not reveal the outcome.",
-      );
+      if (isApiError(e, "unauthenticated"))
+        router.replace(
+          `/sign-in?next=${encodeURIComponent(`/replay/${sessionId}/reveal`)}`,
+        );
+      else
+        setError(
+          isApiError(e, "state_conflict")
+            ? "Reveal requires a submitted analysis and a confirmed devnet receipt. Check the receipt on the feedback page."
+            : "Could not load the revealed session.",
+        );
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
-
+  }, [sessionId, router]);
   useEffect(() => {
     void load();
   }, [load]);
-
-  const saveReflection = async () => {
-    if (!reflection.trim()) return;
-    try {
-      await request("reflect", { params: { sessionId }, body: { text: reflection.trim() } });
-    } catch {
-      setError("Could not save your reflection.");
-    }
-  };
-
-  const direction = reveal ? DIRECTION[reveal.observedDirection] : null;
-  const outcomeFindings = (coach.evaluation?.findings ?? []).filter(
-    (finding) => finding.reasonCode === "outcome_judgment" && finding.score !== null,
+  const submission = history?.submissions[0]?.submission;
+  const snapshot = history?.snapshots?.find(
+    (s) => s.id === submission?.chartSnapshotId,
   );
-  const outcomeNote = coach.evaluation?.coachNotes?.find((note) => note.stage === "reveal")?.text;
-
+  const complete = reveal?.session.status === "completed";
+  const matched =
+    !!reveal && submission?.prediction === reveal.observedDirection;
+  const evidence =
+    history?.evaluations[0]?.findings.filter(
+      (f) => f.category === "evidence",
+    ) ?? [];
+  const format = (value: string) =>
+    Number(value).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-ground">
-      <ReplayHeader
-        symbol={reveal?.session.symbol ?? "SOL/USDT"}
+    <div className="replay-shell">
+      <AppHeader
+        status={reveal?.session.status ?? "revealed"}
         timeframe={reveal?.session.timeframe}
-        phase="reveal"
+        horizon={reveal?.session.predictionHorizon}
+        revealReady
       />
-
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 bg-panel px-4 py-3">
-        <div>
-          <h1 className="text-lead font-semibold text-ink">Outcome Reveal</h1>
-          <p className="text-tiny text-ink-faint">
-            The cutoff stays marked so you can separate what you knew from what came after.
-          </p>
-        </div>
-        <Badge tone="replay">Cutoff marked on chart</Badge>
-      </div>
-
-      <main className="flex min-h-0 flex-1 flex-col gap-px lg:grid lg:grid-cols-workspace">
-        <section className="flex min-h-0 flex-1 flex-col" aria-label="Revealed chart">
-          <div className="min-h-0 flex-1">
-            {/* Boundary overlay is off here: the hidden region has been revealed. */}
-            {candles.length ? (
-              <TradingViewChart initialCandles={candles} showBoundary={false} />
+      <main className="feedback-layout">
+        <section className="feedback-chart" aria-label="Revealed chart">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-tiny text-ink-muted">
+              {reveal
+                ? `Range extended by +${reveal.session.predictionHorizon} · ${candles.filter((c) => c.offsetMinutes >= 0).length} complete candles`
+                : "Revealing the horizon…"}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                className="px-3 text-tiny"
+                aria-pressed={showDrawings}
+                onClick={() => setShowDrawings(!showDrawings)}
+              >
+                Your drawings
+              </Button>
+              <Button
+                variant="ghost"
+                className="px-3 text-tiny"
+                onClick={() => chart.current?.resetView()}
+              >
+                Reset view
+              </Button>
+            </div>
+          </div>
+          <div className="chart-canvas">
+            {reveal && candles.length ? (
+              <>
+                <TradingViewChart
+                  ref={chart}
+                  initialCandles={candles}
+                  showBoundary={false}
+                  horizon={reveal.session.predictionHorizon}
+                  indicators={snapshot ? snapshotIndicators(snapshot) : []}
+                  drawings={
+                    snapshot && showDrawings ? snapshotDrawings(snapshot) : []
+                  }
+                  readOnly
+                />
+                <div
+                  className="reveal-curtain hatch-hidden"
+                  aria-hidden="true"
+                />
+              </>
             ) : (
-              <div className="h-full w-full p-4">
-                <Skeleton className="h-full w-full" />
-                <span className="sr-only">Loading revealed candles…</span>
-              </div>
+              <Skeleton className="h-full w-full" />
             )}
           </div>
-        </section>
-
-        <aside className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-ground p-3">
-          {error && <ErrorBanner title="Reveal unavailable" message={error} onRetry={load} />}
-
-          {loading && !reveal && <Skeleton className="h-32 w-full" />}
-
-          {reveal && direction && (
-            <>
-              <Card title="What actually happened">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <Badge tone={direction.tone}>
-                    <direction.Icon size={12} strokeWidth={2.5} aria-hidden="true" />{" "}
-                    {direction.label}
-                  </Badge>
-                  <span
-                    className={`nums text-title font-semibold ${
-                      reveal.observedDirection === "higher"
-                        ? "text-bull"
-                        : reveal.observedDirection === "lower"
-                          ? "text-bear"
-                          : "text-ink"
-                    }`}
-                  >
-                    {reveal.percentChange}%
-                  </span>
+          {reveal && (
+            <dl className="summary-values">
+              {[
+                ["Close at cutoff", format(reveal.referenceClose)],
+                [
+                  `Close at +${reveal.session.predictionHorizon}`,
+                  format(reveal.horizonClose),
+                ],
+                ["Change", format(reveal.change)],
+                ["Percent", `${format(reveal.percentChange)}%`],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd className="nums font-semibold">{value}</dd>
                 </div>
-                <dl className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <dt className="text-micro text-ink-faint">At the cutoff</dt>
-                    <dd className="nums mt-0.5 text-lead text-ink">{reveal.referenceClose}</dd>
+              ))}
+            </dl>
+          )}
+        </section>
+        <aside className="feedback-aside pane-enter">
+          <header className="bay-header">
+            <div>
+              <h1 className="font-semibold">Outcome and your call</h1>
+              <p className="mt-1 text-tiny text-ink-muted">
+                Revealing does not change your evidence check
+              </p>
+            </div>
+          </header>
+          <div className="bay-scroll space-y-5">
+            {error && (
+              <ErrorBanner
+                title="Reveal unavailable"
+                message={error}
+                onRetry={load}
+              />
+            )}{" "}
+            {loading && !reveal && <p role="status">Loading the outcome…</p>}
+            {reveal && submission && (
+              <>
+                <div className="outcome-grid">
+                  <div
+                    className="outcome-card"
+                    data-result={matched ? "correct" : "wrong"}
+                  >
+                    <p className="eyebrow">
+                      You said · {matched ? "correct" : "wrong"}
+                    </p>
+                    <p className="mt-3 text-lead font-semibold">
+                      {direction[submission.prediction]} ·{" "}
+                      {submission.confidencePercent}%
+                    </p>
                   </div>
-                  <div>
-                    <dt className="text-micro text-ink-faint">At the horizon</dt>
-                    <dd className="nums mt-0.5 text-lead text-ink">{reveal.horizonClose}</dd>
+                  <div className="outcome-card">
+                    <p className="eyebrow">Market did</p>
+                    <p className="mt-3 text-lead font-semibold">
+                      {direction[reveal.observedDirection]} ·{" "}
+                      {format(reveal.percentChange)}%
+                    </p>
                   </div>
-                </dl>
-              </Card>
-
-              <Card
-                title="Reasoning versus outcome"
-                className="ring-1 ring-inset ring-accent-500/25"
-              >
-                <p className="text-base leading-relaxed text-ink">
-                  A wrong prediction does not mean weak reasoning, and a correct one does not prove
-                  it was sound. Your reasoning score is unchanged by this outcome.
+                </div>
+                <p className="text-tiny leading-relaxed text-ink-muted">
+                  Direction {matched ? "matched" : "did not match"}. One sample
+                  cannot establish the quality of your reasoning. Your evidence
+                  check is unchanged:{" "}
+                  {evidence.filter((f) => f.status === "supported").length}{" "}
+                  supported,{" "}
+                  {evidence.filter((f) => f.status === "contradicted").length}{" "}
+                  contradicted,{" "}
+                  {evidence.filter((f) => f.status === "not_assessable").length}{" "}
+                  not assessable.
                 </p>
-              </Card>
-
-              <Card title="Coach on the outcome">
-                {coach.pending && (
-                  <p role="status" className="text-base text-ink-muted">
-                    The coach is comparing your call with what happened…
+                <p className="text-micro text-ink-faint">
+                  Flat means the horizon close exactly equals the cutoff close.
+                </p>
+                <dl className="grid grid-cols-2 gap-3 lg:hidden">
+                  {[
+                    ["At cutoff", format(reveal.referenceClose)],
+                    ["At horizon", format(reveal.horizonClose)],
+                    ["Change", format(reveal.change)],
+                    ["Percent", `${format(reveal.percentChange)}%`],
+                  ].map(([label, value]) => (
+                    <div className="surface-inset p-3" key={label}>
+                      <dt className="text-micro text-ink-muted">{label}</dt>
+                      <dd className="nums mt-1">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="surface-inset p-4">
+                  <h2 className="eyebrow">Invalidation you set</h2>
+                  <p className="mt-2 text-tiny leading-relaxed">
+                    {submission.invalidation ?? "No invalidation supplied."}
+                  </p>
+                  {submission.invalidation && (
+                    <p className="mt-2 text-micro text-ink-faint">
+                      Preserved as written; this free-text condition is not
+                      automatically assessed.
+                    </p>
+                  )}
+                </div>
+                <label className="block text-tiny text-ink-muted">
+                  Reflection · saved with the session
+                  <Textarea
+                    rows={5}
+                    className="mt-2"
+                    value={reflection}
+                    onChange={(e) => setReflection(e.target.value)}
+                    placeholder="What would you examine differently next time?"
+                    readOnly={complete}
+                  />
+                </label>
+                {complete && (
+                  <p role="status" className="text-tiny text-bull">
+                    ✓ Session completed. Your reflection is saved.
                   </p>
                 )}
-                {!coach.pending && outcomeFindings.length > 0 && (
-                  <dl className="grid grid-cols-2 gap-3">
-                    {outcomeFindings.map((finding) => (
-                      <div key={finding.category}>
-                        <dt className="text-micro text-ink-faint">
-                          {finding.category === "confirmation" ? "Did the market agree" : "Was your confidence justified"}
-                        </dt>
-                        <dd className="nums mt-0.5 text-lead text-ink">{finding.score} / 100</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-                {!coach.pending && outcomeFindings.length === 0 && (
-                  <p className="text-base text-ink-muted">The coach has not rated this outcome yet.</p>
-                )}
-                {outcomeNote && <p className="mt-3 text-base leading-relaxed text-ink">{outcomeNote}</p>}
-                {!coach.pending && (
-                  <div className="mt-3">
-                    <Button
-                      disabled={coach.rating}
-                      onClick={() => void coach.rateNow().catch(() => setError("The coach could not rate this outcome right now."))}
-                    >
-                      {coach.rating ? "Rating…" : outcomeFindings.length ? "Rate again" : "Rate against the outcome"}
-                    </Button>
-                  </div>
-                )}
-              </Card>
-
-              <Card title="Reflection">
-                <label className="sr-only" htmlFor="reflection">
-                  What would you examine differently next time?
-                </label>
-                <Textarea
-                  id="reflection"
-                  rows={4}
-                  value={reflection}
-                  onChange={(e) => setReflection(e.target.value)}
-                  placeholder="What would you look at differently next time?"
-                />
-              </Card>
-
-              <div className="flex justify-end gap-2 pb-1">
-                <Button
-                  variant="primary"
-                  disabled={saving}
-                  onClick={async () => {
-                    setSaving(true); setError(null);
-                    try {
-                      if (reflection.trim()) await request("reflect", { params: { sessionId }, body: { text: reflection.trim() } });
-                      await request("complete", { params: { sessionId } });
-                      router.push("/history");
-                    } catch { setError("Could not save and complete the session. Please try again."); }
-                    finally { setSaving(false); }
-                  }}
-                >
-                  {saving ? "Saving…" : "Save and complete session"}
-                </Button>
-              </div>
-            </>
-          )}
-
-          <Link
-            href="/"
-            className="inline-flex min-h-touch items-center px-1 text-base text-ink-muted hover:text-ink"
-          >
-            Back to markets
-          </Link>
+              </>
+            )}
+          </div>
+          <footer className="bay-footer flex flex-wrap items-center justify-between gap-3">
+            <Link
+              className="text-tiny text-ink-muted"
+              href={`/replay/${sessionId}/feedback`}
+            >
+              Back to feedback
+            </Link>
+            {complete ? (
+              <Button variant="primary" onClick={() => router.push("/history")}>
+                Your record
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                disabled={saving || !reveal}
+                onClick={async () => {
+                  setSaving(true);
+                  setError("");
+                  try {
+                    if (reflection.trim())
+                      await request("reflect", {
+                        params: { sessionId },
+                        body: { text: reflection.trim() },
+                      });
+                    await request("complete", { params: { sessionId } });
+                    router.push("/history");
+                  } catch {
+                    setError(
+                      "Could not save and complete the session. Your changes are still here; try again.",
+                    );
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                {saving ? "Saving…" : "Complete session"}
+              </Button>
+            )}
+          </footer>
         </aside>
       </main>
     </div>

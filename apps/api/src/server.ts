@@ -88,6 +88,10 @@ export async function buildApp(options: AppOptions) {
     await jobs.scheduleExpiry(); reply.code(201); return result;
   });
   app.get("/api/sessions", (r) => service.list(user(r)));
+  app.put("/api/sessions/:sessionId/archive", (r) => {
+    const body = C.httpContracts.setArchived.body.parse(r.body);
+    return service.setArchived(user(r), sid(r), body.archived, key(r));
+  });
   app.get("/api/sessions/:sessionId", async (r) => C.PublicSession.parse((await service.store.read(user(r), sid(r))).public));
   app.get("/api/sessions/:sessionId/chart-context", async (r) => {
     const query = z.strictObject({ chartSnapshotId: C.Id.optional() }).parse(r.query);

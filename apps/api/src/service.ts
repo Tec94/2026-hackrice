@@ -38,7 +38,7 @@ export class ReplayService {
         createdAt: new Date(now).toISOString(), expiresAt: new Date(now + RETENTION_MS).toISOString(),
       });
       const snapshot = C.ChartSnapshot.parse({ id: randomUUID(), sessionId: session.id, revision: 0,
-        timeframe: input.timeframe, visibleRange: session.chartRange, indicators: [...C.demoIndicators], drawings: [] });
+        timeframe: input.timeframe, visibleRange: session.chartRange, indicators: [{ name: "ema", period: 21 }], drawings: [] });
       const state: State = { public: session, datasetId: candidate.datasetId, cutoffTimeMs: candidate.cutoffTimeMs,
         policy: decimalPolicy, snapshots: [snapshot], turns: [], submissions: [], evaluations: [],
         facts: [], recordings: [], events: [], clientCommands: [] };
@@ -50,6 +50,15 @@ export class ReplayService {
   async list(userId: string) {
     const result = await this.store.db.query("SELECT state FROM replay_sessions WHERE user_id=$1 AND deleting=false AND expires_at>$2 ORDER BY state->'public'->>'createdAt' DESC", [userId, new Date(this.store.now())]);
     return result.rows.map((r) => C.PublicSession.parse(r.state.public));
+  }
+
+  async setArchived(userId: string, sessionId: string, archived: boolean, key: string) {
+    return this.store.mutate(userId, "archive", key, { archived }, sessionId, async (tx) => {
+      const state = await this.store.read(userId, sessionId, tx);
+      state.public.archived = archived;
+      await this.store.save(tx, state);
+      return state.public;
+    });
   }
 
   snapshot(state: State, id?: string) {
@@ -197,7 +206,7 @@ export class ReplayService {
     const state = await this.store.read(userId, sessionId);
     return C.History.parse({ session: state.public, turns: state.turns, submissions: state.submissions,
       evaluations: state.evaluations, recordings: state.recordings, ...(state.reflection ? { reflection: state.reflection } : {}),
-      ...(state.draft ? { draft: state.draft } : {}) });
+      ...(state.draft ? { draft: state.draft } : {}), snapshots: state.snapshots, facts: state.facts });
   }
 
   async receipt(userId: string, sessionId: string) {

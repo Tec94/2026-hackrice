@@ -73,7 +73,9 @@ test('voice lifecycle gates audio, stops capture, and acknowledges only drained 
   event(socket, { type: 'voice.ready', turnId: start.turnId, format }); await flush();
   worklets.at(-1).port.onmessage({ data: new Float32Array(1600).fill(0.5) });
   assert.equal(decodeAudioFrame(new Uint8Array(socket.sent[1])).turnId, start.turnId);
-  client.stop(); assert.ok(tracks[0].stopped);
+  client.stop();
+  assert.equal(worklets.at(-1).port.onmessage, null, 'stopping a turn detaches capture immediately');
+  assert.equal(tracks[0].stopped, false, 'the conversation retains its microphone between turns');
   event(socket, { type: 'assistant.response', turnId: start.turnId, chartSnapshotId: snapshotId, reply: { kind: 'refusal', reason: 'advice' } });
   event(socket, { type: 'assistant.audio.start', turnId: start.turnId, format });
   socket.message(encodeAudioFrame(start.turnId, new Uint8Array([0, 0])).buffer);
@@ -83,6 +85,8 @@ test('voice lifecycle gates audio, stops capture, and acknowledges only drained 
   assert.equal(completions, 1);
   assert.equal(JSON.parse(socket.sent.at(-1)).type, 'assistant.playback.completed');
   assert.deepEqual(errors, []);
+  client.close();
+  assert.ok(tracks[0].stopped, 'pausing the conversation releases the microphone');
 
   await client.start(async () => ({ id: snapshotId }));
   const unsafe = sockets.at(-1);

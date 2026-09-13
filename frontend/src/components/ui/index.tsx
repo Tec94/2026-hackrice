@@ -3,24 +3,27 @@
 import React, { useCallback, useEffect, useId, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/utilities/cn";
+import { Presence } from "./Presence";
 
 /* ---------------------------------- Button --------------------------------- */
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-ink text-[#0a0a0a] hover:bg-white",
-  secondary: "bg-raised text-ink hover:bg-line",
-  ghost: "bg-transparent text-ink-muted hover:bg-raised hover:text-ink",
+  primary: "button-primary hover:brightness-105",
+  secondary: "control-surface text-ink hover:brightness-110",
+  ghost: "button-ghost hover:text-ink",
   danger: "bg-bear text-white hover:brightness-110",
-  accent: "bg-accent-500 text-[#0a0a0a] hover:bg-accent-400",
+  accent: "button-primary hover:brightness-105",
 };
 
 export function Button({
   variant = "secondary",
   className,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: ButtonVariant;
+}) {
   return (
     <button
       {...props}
@@ -64,20 +67,33 @@ export function IconButton({
 /* ---------------------------------- Fields --------------------------------- */
 
 const fieldBase =
-  "w-full min-w-0 rounded-lg border-hairline border-line bg-raised px-3 py-2 text-base text-ink placeholder:text-ink-faint " +
+  "surface-inset w-full min-w-0 rounded-lg border-0 px-3 py-2 text-base text-ink placeholder:text-ink-faint " +
   "transition-colors duration-feedback ease-settle focus:outline-none focus:ring-2 focus:ring-accent-400";
 
-export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  function Input({ className, ...props }, ref) {
-    return <input ref={ref} {...props} className={cn(fieldBase, "min-h-touch", className)} />;
-  },
-);
+export const Input = React.forwardRef<
+  HTMLInputElement,
+  React.InputHTMLAttributes<HTMLInputElement>
+>(function Input({ className, ...props }, ref) {
+  return (
+    <input
+      ref={ref}
+      {...props}
+      className={cn(fieldBase, "min-h-touch", className)}
+    />
+  );
+});
 
 export const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.TextareaHTMLAttributes<HTMLTextAreaElement>
 >(function Textarea({ className, ...props }, ref) {
-  return <textarea ref={ref} {...props} className={cn(fieldBase, "resize-y", className)} />;
+  return (
+    <textarea
+      ref={ref}
+      {...props}
+      className={cn(fieldBase, "resize-y", className)}
+    />
+  );
 });
 
 export function Select({
@@ -86,7 +102,10 @@ export function Select({
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select {...props} className={cn(fieldBase, "min-h-touch cursor-pointer", className)}>
+    <select
+      {...props}
+      className={cn(fieldBase, "min-h-touch cursor-pointer", className)}
+    >
       {children}
     </select>
   );
@@ -196,7 +215,10 @@ export function ProgressBar({
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
-      className={cn("animate-pulse rounded-lg bg-raised motion-reduce:animate-none", className)}
+      className={cn(
+        "animate-pulse rounded-lg bg-raised motion-reduce:animate-none",
+        className,
+      )}
       aria-hidden="true"
     />
   );
@@ -269,6 +291,8 @@ const FOCUSABLE = [
 export function useFocusTrap(active: boolean, onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!active) return;
@@ -280,13 +304,13 @@ export function useFocusTrap(active: boolean, onClose: () => void) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        closeRef.current();
         return;
       }
       if (event.key !== "Tab" || !node) return;
-      const focusable = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (el) => el.offsetParent !== null,
-      );
+      const focusable = Array.from(
+        node.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter((el) => el.offsetParent !== null);
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -304,7 +328,7 @@ export function useFocusTrap(active: boolean, onClose: () => void) {
       document.removeEventListener("keydown", onKeyDown, true);
       restoreTo.current?.focus?.();
     };
-  }, [active, onClose]);
+  }, [active]);
 
   return ref;
 }
@@ -328,33 +352,45 @@ export function Dialog({
 }) {
   const ref = useFocusTrap(open, onClose);
   const titleId = useId();
-  if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+    <Presence
+      open={open}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="surface relative max-h-full w-full max-w-md animate-rise-in overflow-y-auto rounded-xl2 bg-panel p-5"
+        className="surface relative max-h-full w-full max-w-lg overflow-y-auto rounded-2xl p-6"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id={titleId} className="text-lead font-semibold text-ink">
               {title}
             </h2>
-            {description && <p className="mt-1 text-tiny text-ink-muted">{description}</p>}
+            {description && (
+              <p className="mt-1 text-tiny text-ink-muted">{description}</p>
+            )}
           </div>
           <IconButton label="Close" onClick={onClose} className="-mr-2 -mt-2">
             <X size={18} />
           </IconButton>
         </div>
-        {children && <div className="mt-4 space-y-3 text-base text-ink-muted">{children}</div>}
+        {children && (
+          <div className="mt-4 space-y-3 text-base text-ink-muted">
+            {children}
+          </div>
+        )}
         <div className="mt-5 flex flex-wrap justify-end gap-2">{actions}</div>
       </div>
-    </div>
+    </Presence>
   );
 }
 
@@ -374,8 +410,10 @@ export function Tabs<T extends string>({
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       const index = tabs.findIndex((t) => t.id === active);
-      if (event.key === "ArrowRight") onChange(tabs[(index + 1) % tabs.length].id);
-      if (event.key === "ArrowLeft") onChange(tabs[(index - 1 + tabs.length) % tabs.length].id);
+      if (event.key === "ArrowRight")
+        onChange(tabs[(index + 1) % tabs.length].id);
+      if (event.key === "ArrowLeft")
+        onChange(tabs[(index - 1 + tabs.length) % tabs.length].id);
     },
     [tabs, active, onChange],
   );
@@ -396,7 +434,9 @@ export function Tabs<T extends string>({
           className={cn(
             "motion-control min-h-touch flex-1 rounded-md px-3 text-base font-medium",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400",
-            active === tab.id ? "bg-raised text-ink shadow-surface" : "text-ink-faint hover:text-ink",
+            active === tab.id
+              ? "bg-raised text-ink shadow-surface"
+              : "text-ink-faint hover:text-ink",
           )}
         >
           {tab.label}

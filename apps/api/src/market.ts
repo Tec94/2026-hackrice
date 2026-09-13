@@ -402,6 +402,15 @@ function calculateIntent(intent: Extract<Intent, { kind: "metric" }>, input: Cal
 
 export function answerQuestion(input: CalculationInput & { text: string }): Reply {
   const intent = parseQuestionIntent(input.text);
+  if (intent.kind === "refusal" && intent.reason === "unsupported" && /\band\b/i.test(input.text)) {
+    const text = input.text.replace(/^(?:what(?:'s| is)|calculate|show me)\s+(?:the\s+)?/i, "")
+      .replace(/\s+(?:on|for) the selected candle[?.!]*$/i, "");
+    const parts = text.split(/\s+and\s+/i).map(part => parseQuestionIntent(part));
+    if (parts.every(part => part.kind === "metric")) {
+      const facts = parts.map(part => calculateIntent(part, input));
+      return SafeReply.parse(facts.every(fact => fact !== null) ? { kind: "calculation", facts } : { kind: "refusal", reason: "insufficient_data" });
+    }
+  }
   if (intent.kind === "metrics") {
     // Every half must compute, so a partial pair refuses rather than quietly
     // answering only the side that happened to succeed.
@@ -424,21 +433,29 @@ export function evaluateSubmission(input: CalculationInput & {
   const facts: ComputedFact[] = [];
   const findings: z.infer<typeof Evaluation>["findings"] = [];
   for (const claim of submission.claimedEvidence) {
-    const comparison = /^(.+?)\s*(>=|<=|>|<|=)\s*(-?(?:0|[1-9]\d*)(?:\.\d+)?)$/.exec(claim);
+    const comparison = /^(.+?)\s*(>=|<=|>|<|=)\s*(.+)$/.exec(claim);
     const intent = comparison ? parseQuestionIntent(comparison[1]!) : null;
-    if (!comparison || intent?.kind !== "metric") {
+    const literal = comparison && /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(comparison[3]!.trim());
+    const rightIntent = comparison && !literal ? parseQuestionIntent(comparison[3]!) : null;
+    if (!comparison || intent?.kind !== "metric" || (!literal && rightIntent?.kind !== "metric")) {
       findings.push({ category: "evidence", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" });
       continue;
     }
     const fact = calculateIntent(intent, input);
-    if (!fact) {
+    const rightFact = rightIntent?.kind === "metric" ? calculateIntent(rightIntent, input) : null;
+    if (!fact || (!literal && !rightFact)) {
       findings.push({ category: "evidence", status: "insufficient_evidence", score: null, factIds: [], reasonCode: "insufficient_data" });
       continue;
     }
+    if (rightFact && rightFact.unit !== fact.unit) {
+      findings.push({ category: "evidence", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" });
+      continue;
+    }
     if (!facts.some((existing) => existing.id === fact.id)) facts.push(fact);
-    const order = new Decimal(fact.value).comparedTo(comparison[3]!);
+    if (rightFact && !facts.some(existing => existing.id === rightFact.id)) facts.push(rightFact);
+    const order = new Decimal(fact.value).comparedTo(rightFact?.value ?? comparison[3]!.trim());
     const supported = ({ ">": order > 0, "<": order < 0, "=": order === 0, ">=": order >= 0, "<=": order <= 0 } as Record<string, boolean>)[comparison[2]!]!;
-    findings.push({ category: "evidence", status: supported ? "supported" : "contradicted", score: null, factIds: [fact.id], reasonCode: supported ? "claim_supported" : "claim_contradicted" });
+    findings.push({ category: "evidence", status: supported ? "supported" : "contradicted", score: null, factIds: rightFact ? [fact.id, rightFact.id] : [fact.id], reasonCode: supported ? "claim_supported" : "claim_contradicted" });
   }
   if (findings.length === 0) findings.push({ category: "evidence", status: "insufficient_evidence", score: null, factIds: [], reasonCode: "missing_comparison" });
   findings.push(

@@ -39,6 +39,10 @@ export const ChartContextInput = z.strictObject({
   selectedCandleOffsetMinutes: PastOffset.optional(),
   indicators: z.array(Indicator),
   drawings: z.array(Drawing),
+  appearance: z.strictObject({
+    indicatorIds: z.array(z.enum(["ema21", "sma20", "sma50", "rsi14", "bb20", "macd"])),
+    drawings: z.array(z.strictObject({ id: Id, kind: z.enum(["horizontal", "trendline", "ray", "rectangle"]), a: Anchor, b: Anchor })),
+  }).optional(),
 });
 export const ChartSnapshot = z.strictObject({
   id: Id,
@@ -49,6 +53,7 @@ export const ChartSnapshot = z.strictObject({
   selectedCandleOffsetMinutes: PastOffset.optional(),
   indicators: z.array(Indicator),
   drawings: z.array(Drawing),
+  appearance: ChartContextInput.shape.appearance,
 });
 export const SessionStatus = z.enum(["exploring", "submitted", "revealed", "completed"]);
 export const PublicSession = z.strictObject({
@@ -61,6 +66,7 @@ export const PublicSession = z.strictObject({
   latestChartRevision: Revision,
   createdAt: z.iso.datetime(),
   expiresAt: z.iso.datetime(),
+  archived: z.boolean().optional(),
 }).refine((s) => ["revealed", "completed"].includes(s.status) || s.chartRange.to <= 0,
   "Future range is unavailable before reveal.");
 export const CreateSession = z.strictObject({
@@ -265,6 +271,8 @@ export const History = z.strictObject({
   evaluations: z.array(Evaluation), recordings: z.array(Recording), reflection: Reflection.optional(),
   /** What the coach has taken down of the analysis so far, so a reload keeps the form. */
   draft: SubmissionDraft.optional(),
+  snapshots: z.array(ChartSnapshot).optional(),
+  facts: z.array(Fact).optional(),
 });
 export const Reveal = z.strictObject({
   session: PublicSession.refine((s) => ["revealed", "completed"].includes(s.status), "Reveal requires an authorized revealed session."),
@@ -337,9 +345,10 @@ export const Learning = z.strictObject({ status: z.enum(["completed", "pending",
 export const httpContracts = {
   createSession: { method: "POST", path: "/api/sessions", body: CreateSession, response: PublicSession },
   listSessions: { method: "GET", path: "/api/sessions", response: z.array(PublicSession) },
+  setArchived: { method: "PUT", path: "/api/sessions/:sessionId/archive", body: z.strictObject({ archived: z.boolean() }), response: PublicSession },
   getSession: { method: "GET", path: "/api/sessions/:sessionId", response: PublicSession },
   updateChartContext: { method: "PATCH", path: "/api/sessions/:sessionId/chart-context", body: ChartContextInput, response: ChartSnapshot },
-  getChartContext: { method: "GET", path: "/api/sessions/:sessionId/chart-context", response: ChartSnapshot },
+  getChartContext: { method: "GET", path: "/api/sessions/:sessionId/chart-context", query: z.strictObject({ chartSnapshotId: Id.optional() }), response: ChartSnapshot },
   getBars: { method: "GET", path: "/api/sessions/:sessionId/chart/bars", query: BarsQuery, response: Bars },
   askQuestion: { method: "POST", path: "/api/sessions/:sessionId/questions", body: Question, response: AcceptedQuestion },
   submitAnalysis: { method: "POST", path: "/api/sessions/:sessionId/submissions", body: Submission, response: RecordedSubmission },
