@@ -266,27 +266,84 @@ export function correctHearing(question: string): string {
  * no phrasing can reach a candle the learner is not allowed to see.
  */
 function parseLookback(expression: string): { rest: string; barsBack?: number; minutesBack?: number } {
-  const words: Record<string, number> = {
-    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
-    seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  const units_: Record<string, number> = {
+    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+    eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13,
+    fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
   };
+  const tens: Record<string, number> = {
+    twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50,
+    sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+  };
+  /**
+   * Reads a spoken count, which arrives as words as often as digits.
+   *
+   * Handles the compound forms speech produces: "thirty six", "thirty-six"
+   * and "a hundred and twenty". Anything it cannot read returns undefined,
+   * so an unrecognised phrase refuses rather than guessing a number.
+   */
   const count = (raw: string) => {
-    const value = /^\d+$/.test(raw) ? Number(raw) : words[raw];
-    return Number.isSafeInteger(value) && value! > 0 && value! <= 500 ? value : undefined;
+    const text = raw.trim().toLowerCase().replace(/-/g, " ");
+    if (/^\d+$/.test(text)) {
+      const digits = Number(text);
+      return Number.isSafeInteger(digits) && digits > 0 && digits <= 500 ? digits : undefined;
+    }
+    let total = 0;
+    let current = 0;
+    let seen = false;
+    let sawDigits = false;
+    for (const word of text.split(/\s+/).filter((part) => part && part !== "and")) {
+      // Mishearing correction turns some number words into digits for indicator
+      // periods, so a spoken count can arrive part digit, part word: "20 four".
+      if (/^\d+$/.test(word)) {
+        const digits = Number(word);
+        if (!Number.isSafeInteger(digits) || digits < 0) return undefined;
+        // Two digit groups side by side are two numbers, not one: in "rsi 14 3
+        // candles ago" the 14 is the indicator's period and only the 3 counts back.
+        if (sawDigits) return undefined;
+        sawDigits = true;
+        current += digits;
+        seen = true;
+      } else if (word === "hundred") {
+        if (!seen) return undefined;
+        current = (current || 1) * 100;
+      } else if (tens[word] !== undefined) {
+        current += tens[word]!;
+        seen = true;
+      } else if (units_[word] !== undefined) {
+        current += units_[word]!;
+        seen = true;
+      } else return undefined;
+    }
+    total += current;
+    return seen && total > 0 && total <= 500 ? total : undefined;
   };
   // "... 3 candles before the cutoff" / "... 3 bars back" / "... 3 candles ago"
-  const bars = /^(.*?)\s+(\d+|[a-z]+)\s+(?:candles?|bars?)\s+(?:before\s+(?:the\s+)?cut-?\s?off|back|ago|earlier|prior)$/.exec(expression);
+  /** Splits "opening price thirty six" into the metric and the spoken count. */
+  const peel = (head: string): { rest: string; value: number } | undefined => {
+    const parts = head.trim().split(/\s+/);
+    // Longest run of trailing words that reads as a number wins, so a metric
+    // whose own name ends in a word is never mistaken for part of the count.
+    for (let start = Math.max(0, parts.length - 4); start < parts.length; start++) {
+      const value = count(parts.slice(start).join(" "));
+      if (value !== undefined) return { rest: parts.slice(0, start).join(" ").trim(), value };
+    }
+    return undefined;
+  };
+  const bars = /^(.*?)\s+(?:candles?|bars?)\s+(?:before\s+(?:the\s+)?cut-?\s?off|back|ago|earlier|prior)$/.exec(expression);
   if (bars) {
-    const value = count(bars[2]!);
-    if (value !== undefined) return { rest: bars[1]!.trim(), barsBack: value };
+    const peeled = peel(bars[1]!);
+    if (peeled) return { rest: peeled.rest, barsBack: peeled.value };
   }
   // "... 2 hours before the cutoff" / "... 30 minutes ago"
-  const units: Record<string, number> = { minute: 1, min: 1, hour: 60, day: 1440, week: 10080 };
-  const time = /^(.*?)\s+(?:(\d+|[a-z]+)\s+)?(minutes?|mins?|hours?|days?|weeks?)\s+(?:before\s+(?:the\s+)?cut-?\s?off|back|ago|earlier|prior)$/.exec(expression);
+  const units: Record<string, number> = { minute: 1, min: 1, hour: 60, hr: 60, day: 1440, week: 10080 };
+  const time = /^(.*?)\s+(minutes?|mins?|hours?|days?|weeks?|hrs?)\s+(?:before\s+(?:the\s+)?cut-?\s?off|back|ago|earlier|prior)$/.exec(expression);
   if (time) {
-    const value = time[2] === undefined ? 1 : count(time[2]);
-    const unit = units[time[3]!.replace(/s$/, "")];
-    if (value !== undefined && unit) return { rest: time[1]!.trim(), minutesBack: value * unit };
+    const unit = units[time[2]!.replace(/s$/, "")];
+    const peeled = peel(time[1]!);
+    // "an hour ago" carries no count of its own and means one.
+    if (unit && peeled) return { rest: peeled.rest, minutesBack: peeled.value * unit };
+    if (unit && !peeled) return { rest: time[1]!.trim(), minutesBack: unit };
   }
   return { rest: expression };
 }

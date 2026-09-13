@@ -421,3 +421,31 @@ test("the coach answers computable questions about the past and still refuses th
     assert.equal(parseQuestionIntent(text).kind, "refusal", text);
   }
 });
+
+test("a lookback counted in spoken words is read like one in digits", () => {
+  // Speech gives compound numbers as separate words, hyphenated, or part
+  // digit once mishearing correction has rewritten a word it recognises.
+  for (const text of [
+    "what is the opening price thirty six hours before cutoff",
+    "what is the opening price thirty-six hours before cutoff",
+    "what is the opening price thirty six hour before cutoff",
+  ]) {
+    const intent = parseQuestionIntent(text);
+    assert.equal(intent.kind, "metric", text);
+    assert.equal(intent.metric, "open", text);
+    assert.equal(intent.minutesBack, 36 * 60, text);
+  }
+  assert.equal(parseQuestionIntent("what is the open twenty four hours ago").minutesBack, 24 * 60);
+  assert.equal(parseQuestionIntent("what is the close twenty one candles ago").barsBack, 21);
+
+  // An indicator period is its own number: in "rsi 14 3 candles ago" only the
+  // 3 counts back, and the 14 stays the period.
+  const rsi = parseQuestionIntent("what was the rsi 14 3 candles ago");
+  assert.equal(rsi.period, 14);
+  assert.equal(rsi.barsBack, 3);
+
+  // A count nobody can read, or one off the end of the scale, refuses.
+  assert.equal(parseQuestionIntent("what is the open thirty six squirrels ago").kind, "refusal");
+  assert.equal(parseQuestionIntent("what is the open six hundred candles ago").kind, "refusal");
+  assert.equal(parseQuestionIntent("what is the open thirty six hours after cutoff").kind, "refusal");
+});
