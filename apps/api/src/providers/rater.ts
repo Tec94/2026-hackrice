@@ -54,9 +54,16 @@ const REVEAL_PROMPT = [
   "Score 0-100: confirmationScore for how far the market did what the thesis and prediction said it would,",
   "considering direction and size of the move; calibrationScore for whether the stated confidence was justified,",
   "so high confidence in a wrong call scores low and modest confidence in a right call scores in the middle.",
-  "Do not re-score the reasoning. A right call can rest on weak reasoning and a wrong one on sound reasoning;",
+  "thesisOutcomeScore for how well the thesis itself held up against what the price actually did,",
+  "so a thesis whose stated reasoning matched the real move scores high even if the direction call was close;",
+  "choiceScore for whether the prediction and the hypothetical action were the right choices given the outcome,",
+  "so a correct direction paired with an action that would have lost money does not score full marks;",
+  "confidenceScore for whether the confidence level suited the strength of the evidence they actually had.",
+  "Judge each of these against the outcome, not as a fresh review of the writing.",
+  "A right call can rest on weak reasoning and a wrong one on sound reasoning;",
   "your comment should say which of those this was, in one sentence, and name what the learner should examine next time.",
-  "Never use a number that is not in the brief. Call rate_analysis exactly once with both scores and the comment.",
+  "Score every field. A part the learner did not write scores 0; the server ignores it, so do not skip it.",
+  "Never use a number that is not in the brief. Call rate_analysis exactly once with every score and the comment.",
 ].join(" ");
 
 /** The fields each stage asks for. Every one is required: a blank part is
@@ -64,7 +71,7 @@ const REVEAL_PROMPT = [
  *  reliable than asking a model to leave fields out. */
 const STAGE_FIELDS: Record<RatingStage, string[]> = {
   submission: ["thesisScore", "invalidationScore", "riskScore"],
-  reveal: ["confirmationScore", "calibrationScore"],
+  reveal: ["confirmationScore", "calibrationScore", "thesisOutcomeScore", "choiceScore", "confidenceScore"],
 };
 
 function rateFunction(stage: RatingStage) {

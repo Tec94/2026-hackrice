@@ -141,6 +141,10 @@ export const AnalysisRating = z.strictObject({
   riskScore: Percentage.optional(),
   confirmationScore: Percentage.optional(),
   calibrationScore: Percentage.optional(),
+  /* Rated at reveal only, judging the analysis against what the price did. */
+  thesisOutcomeScore: Percentage.optional(),
+  choiceScore: Percentage.optional(),
+  confidenceScore: Percentage.optional(),
   comment: Text.optional(),
 });
 
@@ -154,10 +158,14 @@ export const RecordedSubmission = z.strictObject({
 export const EvidenceStatus = z.enum(["supported", "contradicted", "insufficient_evidence", "not_assessable"]);
 export const RubricCategory = z.enum([
   "evidence", "structure", "confirmation", "invalidation", "risk_reasoning", "confidence_calibration",
+  /* Judged only once the outcome is known; the reasoning scores above stay as
+   * they were, so a right call never retroactively improves a weak analysis. */
+  "thesis_outcome", "choice_quality", "confidence_fit",
 ]);
 export const rubricWeights = {
   evidence: 25, structure: 20, confirmation: 15,
   invalidation: 15, risk_reasoning: 15, confidence_calibration: 10,
+  thesis_outcome: 15, choice_quality: 15, confidence_fit: 10,
 } as const;
 export const EvaluationFinding = z.strictObject({
   category: RubricCategory,

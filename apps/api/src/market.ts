@@ -464,6 +464,10 @@ export function evaluateSubmission(input: CalculationInput & {
     { category: "invalidation", status: submission.invalidation ? "not_assessable" : "insufficient_evidence", score: null, factIds: [], reasonCode: submission.invalidation ? "subjective_judgment" : "missing_invalidation" },
     { category: "risk_reasoning", status: submission.riskReasoning ? "not_assessable" : "insufficient_evidence", score: null, factIds: [], reasonCode: submission.riskReasoning ? "subjective_judgment" : "missing_risk_reasoning" },
     { category: "confidence_calibration", status: "not_assessable", score: null, factIds: [], reasonCode: "uncalibrated_rubric" },
+    // Scored only at the reveal, against what the price actually did.
+    { category: "thesis_outcome", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+    { category: "choice_quality", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+    { category: "confidence_fit", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
   );
   return { evaluation: Evaluation.parse({
     id: input.id, submissionId: input.submissionId, status: "completed", rubricVersion: "explicit-comparison-v1",
@@ -475,7 +479,11 @@ export function evaluateSubmission(input: CalculationInput & {
 /** Where each score lands. Evidence is deliberately absent from both. */
 const RATED_CATEGORIES: Record<CoachRatingStage, Partial<Record<keyof z.infer<typeof AnalysisRating>, z.infer<typeof Evaluation>["findings"][number]["category"]>>> = {
   submission: { thesisScore: "structure", invalidationScore: "invalidation", riskScore: "risk_reasoning" },
-  reveal: { confirmationScore: "confirmation", calibrationScore: "confidence_calibration" },
+  reveal: {
+    confirmationScore: "confirmation", calibrationScore: "confidence_calibration",
+    // Their own categories, so the blind scores above survive the reveal.
+    thesisOutcomeScore: "thesis_outcome", choiceScore: "choice_quality", confidenceScore: "confidence_fit",
+  },
 };
 
 /**

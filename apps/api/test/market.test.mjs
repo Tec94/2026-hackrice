@@ -335,3 +335,32 @@ test("the screen's compound coach question returns both frozen facts and preserv
   assert.ok(reply.facts.every(f => f.chartSnapshotId === snapshot.id));
   assert.equal(answerQuestion({ ...input, text: "RSI 14 and what will happen next?" }).kind, "refusal");
 });
+
+test("the reveal rates the thesis, the choices and the confidence against the outcome", async () => {
+  const { applyRating } = await import("../dist/market.js");
+  const base = {
+    id: "11111111-1111-4111-8111-111111111111",
+    submissionId: "22222222-2222-4222-8222-222222222222",
+    status: "completed", rubricVersion: "explicit-comparison-v1", formulaVersion: "decimal-v1",
+    overallScore: null, scoreMeaning: "educational_rubric_not_validated_prediction_probability",
+    findings: [
+      { category: "structure", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+      { category: "thesis_outcome", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+      { category: "choice_quality", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+      { category: "confidence_fit", status: "not_assessable", score: null, factIds: [], reasonCode: "subjective_judgment" },
+    ],
+  };
+  const blind = applyRating(base, { thesisScore: 80 });
+  assert.equal(blind.findings.find((f) => f.category === "structure").score, 80);
+
+  const after = applyRating(blind, {
+    thesisOutcomeScore: 45, choiceScore: 30, confidenceScore: 20,
+  }, "reveal");
+  const by = Object.fromEntries(after.findings.map((f) => [f.category, f]));
+  assert.equal(by.thesis_outcome.score, 45);
+  assert.equal(by.choice_quality.score, 30);
+  assert.equal(by.confidence_fit.score, 20);
+  assert.equal(by.thesis_outcome.reasonCode, "outcome_judgment");
+  // The blind judgement of the writing survives the outcome.
+  assert.equal(by.structure.score, 80, "a poor outcome does not rewrite the reasoning score");
+});
