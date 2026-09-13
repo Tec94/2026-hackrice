@@ -60,6 +60,8 @@ export type ThinkResponse = { statusCode: number; contentType: string; body: str
 export type TurnContext = {
   turns: { learner: string; coach?: string }[];
   draft?: AnalysisDraft;
+  /** The visible chart in computed values, one rendered fact per line. */
+  chart?: string[];
 };
 type Options = {
   config?: VoiceConfig;
@@ -83,6 +85,8 @@ type ActiveTurn = {
   transcribed: boolean;
   /** The reported transcript is the model's paraphrase, still awaiting the real words. */
   provisional: boolean;
+  /** True once the model has been given computed chart values it may describe. */
+  hasChart: boolean;
   resolveReady(value: boolean): void;
 };
 /** About ten seconds at Deepgram's 30 ms frames: longer than any sentence the text could lag. */
@@ -128,10 +132,26 @@ export function coachPrompt(context: TurnContext | undefined): string {
     "The analysis form so far:",
     ...draftLines(context?.draft),
     "",
+    // The computed chart. Every line came from the same calculator the typed
+    // path uses, so these numbers are already on the allowlist and may be
+    // repeated; anything not here still has to be asked for by function call.
+    ...(context?.chart?.length
+      ? [
+          "The visible chart, already calculated for you:",
+          ...context.chart,
+          "",
+          "You may describe what these values show: the shape, where price sits in the range,",
+          "whether it rose or fell, what stands out. Say it is how you read it, not a fact.",
+          "Repeat only the numbers listed above; for any other value call get_chart_metric.",
+          "Describe only what is on the chart. Never say what happens after it, and never advise buying or selling.",
+          "",
+        ]
+      : []),
     "Use the conversation above to resolve follow-ups such as \"and the volume?\" or \"what about the low?\".",
     "If the learner revises something already on the form, call record_analysis with only the fields that changed.",
     "If they ask what you have so far, read the form back in one or two sentences.",
     "Anything not on the form and not a chart value, answer briefly in your own words without inventing numbers.",
+    "If the calculator refuses a question you can answer from the values above, describe what you see instead of repeating the refusal.",
   ].join("\n");
 }
 
@@ -139,7 +159,8 @@ export function coachPrompt(context: TurnContext | undefined): string {
 function contextNumbers(context: TurnContext | undefined): string[] {
   if (!context) return [];
   const learner = context.turns.map((turn) => turn.learner).join(" ");
-  return numbersIn(`${learner} ${draftLines(context.draft).join(" ")}`);
+  const chart = (context.chart ?? []).join(" ");
+  return numbersIn(`${learner} ${draftLines(context.draft).join(" ")} ${chart}`);
 }
 const bindingSchema = z.strictObject({ userId: z.string().min(1), sessionId: Id, turnId: Id, chartSnapshotId: Id });
 const providerEndpoint = "wss://agent.deepgram.com/v1/agent/converse";
@@ -280,7 +301,7 @@ export function createVoiceProvider(options: Options) {
     const turn: ActiveTurn = {
       binding, token, model, socket, format, active: true, ready: false,
       inputStopped: false, approved: false, audioStarted: false, resolveReady,
-      heldAudio: [], allowed: new Set(), spoken: [], transcribed: false, provisional: false,
+      heldAudio: [], allowed: new Set(), spoken: [], transcribed: false, provisional: false, hasChart: false,
     };
     tokens.set(token, turn);
     turns.set(binding.turnId, turn);
@@ -311,6 +332,7 @@ export function createVoiceProvider(options: Options) {
           const remembered = await context;
           if (!turn.active) return;
           for (const value of contextNumbers(remembered)) turn.allowed.add(value);
+          turn.hasChart = (remembered?.chart?.length ?? 0) > 0;
           socket.send(JSON.stringify({
             type: "Settings", mip_opt_out: true, flags: { history: false },
             audio: {
@@ -478,12 +500,26 @@ export function createVoiceProvider(options: Options) {
           const reply = SafeReply.parse(await options.answer(turn.binding, asked.data.question));
           const grounded = reply.kind !== "calculation"
             || reply.facts.every((fact) => fact.chartSnapshotId === turn.binding.chartSnapshotId);
-          if (grounded) {
+          // "Unsupported" means the calculator has no formula for this, not
+          // that the question is out of bounds. Advice, the future and news
+          // are refused by name and still speak their refusal. For this one
+          // the model is told to answer from the chart values it was given,
+          // where the number guard still holds it to those figures.
+          const describable = reply.kind === "refusal" && reply.reason === "unsupported" && turn.hasChart;
+          if (grounded && !describable) {
             text = renderSafeReply(reply);
             await transcript(turn, asked.data.question, true);
             await options.onEvent(turn.binding, { type: "response", reply });
             // Only a reply this server computed unlocks playback.
             await approve(turn, "function");
+          } else if (describable) {
+            // No formula for this one. Hand the question back and let the
+            // model answer from the values it already has. It is NOT approved
+            // as a function reply: approval stays with the speech path, where
+            // every number it says is checked against the allowlist.
+            text = "No formula for that. Answer it yourself from the chart values you were given,"
+              + " repeating only those numbers. Say it is how you read the chart. Do not say what happens after it.";
+            await transcript(turn, asked.data.question, true);
           }
         }
       } catch { /* The fixed refusal above still answers the model. */ }

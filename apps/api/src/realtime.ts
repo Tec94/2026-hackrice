@@ -4,7 +4,7 @@ import WebSocket, { WebSocketServer, type RawData } from "ws";
 import * as C from "@hackrice/contracts";
 import { z } from "zod";
 import { createVoiceProvider, type TurnContext, type VoiceBinding, type VoiceConfig, type VoiceRelay, type VoiceProviderEvent } from "./providers/voice.js";
-import { applyRating } from "./market.js";
+import { applyRating, describeChart } from "./market.js";
 import { ReplayService } from "./service.js";
 import { appendEvent, ApiFailure, RETENTION_MS } from "./domain.js";
 import { Recordings } from "./recordings.js";
@@ -48,7 +48,20 @@ export class Realtime {
       learner: turn.finalTranscript!,
       ...(turn.reply ? { coach: C.renderSafeReply(turn.reply) } : {}),
     }));
-    return { turns, ...(state.draft ? { draft: state.draft } : {}) };
+    // The chart the learner is looking at, in computed values. The coach may
+    // describe what these show; every figure still comes from the calculator,
+    // and the numbers here join the allowlist so it may repeat them.
+    let chart: string[] = [];
+    try {
+      const snapshot = state.snapshots.find((item) => item.id === binding.chartSnapshotId) ?? state.snapshots.at(-1);
+      if (snapshot) {
+        chart = describeChart({
+          snapshot, candles: await this.service.store.candles(state.datasetId),
+          cutoffTimeMs: state.cutoffTimeMs, decimalPolicy: state.policy,
+        });
+      }
+    } catch { /* The coach can still answer by function call without it. */ }
+    return { turns, ...(state.draft ? { draft: state.draft } : {}), ...(chart.length ? { chart } : {}) };
   }
 
   async broadcast(userId: string, sessionId: string) {

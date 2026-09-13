@@ -452,3 +452,42 @@ test("the learner's real words replace the model's paraphrase when the function 
   assert.equal(transcripts.length, 2, "the paraphrase stands in, then the real words correct it");
   assert.equal(transcripts[1].text, "so what is the closing price there?");
 });
+
+test("a question with no formula is described from the chart, and invented numbers are still blocked", async () => {
+  const chart = ["The close is 137.42 USDT.", "The visible high is 141.00 USDT."];
+  const h = await conversationHarness({
+    context: async () => ({ turns: [], chart }),
+    answer: async () => ({ kind: "refusal", reason: "unsupported" }),
+  });
+  // "What was the trend" has no formula, so the calculator refuses as unsupported.
+  h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "d1", name: "get_chart_metric", arguments: JSON.stringify({ question: "what was the trend" }) }] });
+  await settle();
+  const sent = h.socket.sent.map(String).filter((m) => m.includes("FunctionCallResponse"));
+  assert.equal(sent.length, 1);
+  // The model is told to answer, not handed the refusal to read out.
+  assert.ok(!sent[0].includes("I can answer supported calculation"), "the refusal text is not spoken");
+  assert.ok(/Answer it yourself/.test(sent[0]), "the model is asked to describe what it sees");
+
+  // It may repeat a number from the chart it was given.
+  h.socket.json({ type: "ConversationText", role: "assistant", content: "It has drifted down toward 137.42." });
+  await settle();
+  assert.ok(!h.types().includes("unavailable"), "a value from the chart is allowed");
+
+  // It may not invent one that was never computed.
+  h.socket.json({ type: "ConversationText", role: "assistant", content: "Support looks like 128.55." });
+  await settle();
+  assert.ok(h.types().includes("unavailable"), "an invented number still kills the turn");
+});
+
+test("advice and the future are refused out loud even when the chart could describe them", async () => {
+  for (const reason of ["advice", "future", "news"]) {
+    const h = await conversationHarness({
+      context: async () => ({ turns: [], chart: ["The close is 137.42 USDT."] }),
+      answer: async () => ({ kind: "refusal", reason }),
+    });
+    h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "d2", name: "get_chart_metric", arguments: JSON.stringify({ question: "should i buy" }) }] });
+    await settle();
+    const sent = h.socket.sent.map(String).filter((m) => m.includes("FunctionCallResponse"));
+    assert.ok(!/Answer it yourself/.test(sent[0]), `${reason} must not be handed to the model to describe`);
+  }
+});
