@@ -518,9 +518,7 @@ export function CoachSidebar({
         <header className="bay-header">
           <h2>Your analysis</h2>
           <span className="text-micro text-ink-faint">
-            {readOnly
-              ? `Committed · snapshot r${revision}`
-              : "Final once committed"}
+            {readOnly ? `Committed · snapshot r${revision}` : null}
           </span>
         </header>
         {readOnly ? (
@@ -620,6 +618,10 @@ export function CoachSidebar({
                   </span>
                   <input
                     aria-label="Confidence"
+                    className="confidence-slider"
+                    style={
+                      { "--range-fill": `${confidence || 0}%` } as CSSProperties
+                    }
                     type="range"
                     min={0}
                     max={100}
@@ -630,12 +632,7 @@ export function CoachSidebar({
                   />
                 </label>
                 <label className="analysis-evidence">
-                  <span className="flex flex-wrap justify-between gap-1">
-                    Evidence claims{" "}
-                    <span className="text-micro text-ink-faint">
-                      one per line · checked before reveal
-                    </span>
-                  </span>
+                  <span>Evidence claims</span>
                   <Textarea
                     rows={2}
                     value={evidence}
@@ -644,7 +641,10 @@ export function CoachSidebar({
                   />
                 </label>
                 <label>
-                  Invalidation · optional
+                  <span>
+                    Invalidation{" "}
+                    <span className="text-accent-300">· optional</span>
+                  </span>
                   <Input
                     value={invalidation}
                     onChange={(e) => setInvalidation(e.target.value)}
@@ -652,7 +652,10 @@ export function CoachSidebar({
                   />
                 </label>
                 <label className="col-span-full">
-                  Risk reasoning · optional
+                  <span>
+                    Risk reasoning{" "}
+                    <span className="text-accent-300">· optional</span>
+                  </span>
                   <Input
                     value={risk}
                     onChange={(e) => setRisk(e.target.value)}
@@ -690,7 +693,7 @@ export function CoachSidebar({
           if (!busy) setConfirming(false);
         }}
         title="Commit this analysis?"
-        description={`Submission is final. Chart snapshot r${reviewSnapshot?.revision ?? ""} is frozen, evidence lines are checked, and a hash of your analysis is sent to Solana devnet.`}
+        description="Submission is final."
         actions={
           <>
             <Button disabled={busy} onClick={() => setConfirming(false)}>
@@ -758,7 +761,6 @@ export function CoachSidebar({
         <p className="text-tiny">
           {evidence.split("\n").filter((s) => s.trim()).length} evidence lines
           will be checked. Prose that cannot be calculated stays not assessable.
-          Reveal unlocks after the receipt is confirmed.
         </p>
         {submitError && (
           <ErrorBanner title="Submission failed" message={submitError} />

@@ -237,21 +237,23 @@ export default function ReplaySessionPage({
           <dd>{drawings.length}</dd>
         </dl>
       </div>
-      <footer className="bay-footer">
-        <p className="text-micro text-ink-muted">
-          {dirty ? "Unsaved changes" : readOnly ? "Frozen" : "Synced"} ·
-          snapshot r{saved?.revision ?? 0}
-        </p>
-        {!readOnly && dirty && (
-          <Button
-            className="mt-2 w-full text-tiny"
-            disabled={saving}
-            onClick={save}
-          >
-            {saving ? "Saving…" : "Save chart"}
-          </Button>
-        )}
-      </footer>
+      {(dirty || readOnly) && (
+        <footer className="bay-footer">
+          <p className="text-micro text-ink-muted">
+            {dirty ? "Unsaved changes" : "Frozen"} · snapshot r
+            {saved?.revision ?? 0}
+          </p>
+          {!readOnly && dirty && (
+            <Button
+              className="mt-2 w-full text-tiny"
+              disabled={saving}
+              onClick={save}
+            >
+              {saving ? "Saving…" : "Save chart"}
+            </Button>
+          )}
+        </footer>
+      )}
     </section>
   );
   return (

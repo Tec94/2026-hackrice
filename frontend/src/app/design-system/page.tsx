@@ -154,7 +154,10 @@ export default function DesignSystemPage() {
             <label className="block text-tiny">
               Sample confidence · {progress}%
               <input
-                className="my-5 block w-full accent-accent-400"
+                className="confidence-slider my-5 block w-full"
+                style={
+                  { "--range-fill": `${progress}%` } as React.CSSProperties
+                }
                 type="range"
                 min={0}
                 max={100}

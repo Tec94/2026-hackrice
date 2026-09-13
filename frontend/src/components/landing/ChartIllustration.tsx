@@ -14,7 +14,6 @@ export function ChartIllustration() {
     >
       <div className="flex items-center justify-between gap-2 p-4 text-tiny">
         <b className="rounded-lg bg-ground/60 px-3 py-2">SOL / USDT · 15m</b>
-        <span className="text-ink-faint">Illustration · not live</span>
       </div>
       <svg viewBox="0 0 610 370" aria-hidden="true">
         <defs>
