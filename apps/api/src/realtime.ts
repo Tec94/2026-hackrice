@@ -105,12 +105,12 @@ export class Realtime {
           if (latest) {
             const rated = applyRating(latest, event.rating);
             state.evaluations[state.evaluations.length - 1] = rated;
-            appendEvent(state, { type: "evaluation.updated", evaluation: rated });
+            appendEvent(state, { type: "evaluation.updated", turnId: binding.turnId, evaluation: rated });
           }
         } else if (event.type === "draft") {
           // Merged, not replaced: a later sentence adds to the form.
           state.draft = { ...(state.draft ?? {}), ...event.draft };
-          appendEvent(state, { type: "analysis.draft", draft: event.draft });
+          appendEvent(state, { type: "analysis.draft", turnId: binding.turnId, draft: event.draft });
         } else if (event.type === "unavailable") {
           turn.status = "failed";
           appendEvent(state, { type: "session.error", turnId: binding.turnId, error: { code: "provider_unavailable", requestId: randomUUID() } });

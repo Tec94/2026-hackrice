@@ -297,8 +297,8 @@ export const ServerEvent = z.discriminatedUnion("type", [
   z.strictObject({ ...serverBase, type: z.literal("assistant.audio.start"), turnId: Id, format: AudioFormat }),
   z.strictObject({ ...serverBase, type: z.literal("assistant.completed"), turnId: Id, delivery: z.enum(["none", "partial", "completed"]) }),
   z.strictObject({ ...serverBase, type: z.literal("assistant.cancelled"), turnId: Id }),
-  z.strictObject({ ...serverBase, type: z.literal("analysis.draft"), draft: SubmissionDraft }),
-  z.strictObject({ ...serverBase, type: z.literal("evaluation.updated"), evaluation: Evaluation }),
+  z.strictObject({ ...serverBase, type: z.literal("analysis.draft"), turnId: Id.optional(), draft: SubmissionDraft }),
+  z.strictObject({ ...serverBase, type: z.literal("evaluation.updated"), turnId: Id.optional(), evaluation: Evaluation }),
   z.strictObject({ ...serverBase, type: z.literal("session.revealed"), result: Reveal }),
   z.strictObject({ ...serverBase, type: z.literal("session.error"), error: ApiError, turnId: Id.optional() }),
 ]).refine((event) => event.type !== "assistant.response" || event.reply.kind !== "calculation" ||

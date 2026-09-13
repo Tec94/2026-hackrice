@@ -435,3 +435,20 @@ test("reporting the transcript closes the input so the provider stops waiting fo
   await settle();
   assert.equal(h.socket.sent.length, after);
 });
+
+test("the learner's real words replace the model's paraphrase when the function call comes first", async () => {
+  const h = await conversationHarness({ context: async () => ({ turns: [] }), answer: async () => ({
+    kind: "calculation", facts: [{ id: "99999999-9999-4999-8999-999999999999", chartSnapshotId: snapshotId, metric: "close", value: "137.42", unit: "USDT", calculatedThroughOffsetMinutes: 0 }],
+  }) });
+  // The model can call a function while the learner is still talking.
+  h.socket.json({ type: "FunctionCallRequest", functions: [{ id: "c3", name: "get_chart_metric", arguments: JSON.stringify({ question: "what is the close" }) }] });
+  await settle();
+  const sent = h.socket.sent.filter((m) => typeof m === "string" && m.includes("ForceEndTurn"));
+  assert.equal(sent.length, 0, "a paraphrase must not cut the learner off mid-sentence");
+  // Speech recognition then reports what they actually said.
+  h.socket.json({ type: "ConversationText", role: "user", content: "so what is the closing price there?" });
+  await settle();
+  const transcripts = h.events.filter((event) => event.type === "final_transcript");
+  assert.equal(transcripts.length, 2, "the paraphrase stands in, then the real words correct it");
+  assert.equal(transcripts[1].text, "so what is the closing price there?");
+});

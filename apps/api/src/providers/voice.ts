@@ -81,6 +81,8 @@ type ActiveTurn = {
   spoken: string[];
   /** Set once the learner's words for this turn have been reported downstream. */
   transcribed: boolean;
+  /** The reported transcript is the model's paraphrase, still awaiting the real words. */
+  provisional: boolean;
   resolveReady(value: boolean): void;
 };
 /** About ten seconds at Deepgram's 30 ms frames: longer than any sentence the text could lag. */
@@ -182,14 +184,20 @@ export function createVoiceProvider(options: Options) {
   }
 
   /**
-   * Approves a conversational sentence, or stops one that speaks a number
-   * nobody gave it. A turn approved by a function call spoke a value this
-   * server computed and is trusted to repeat it; a turn that only talked may
-   * use the learner's own numbers and no others.
+   * Reports what the learner said, once per turn.
+   *
+   * `provisional` marks the model's paraphrase of the question, taken from a
+   * function call. It stands in only until speech recognition reports the
+   * learner's actual words, which are what the session should record, and it
+   * does not end the turn: the learner may still be talking when the model
+   * calls a function.
    */
-  async function transcript(turn: ActiveTurn, text: string) {
-    if (turn.transcribed || !text.trim()) return;
+  async function transcript(turn: ActiveTurn, text: string, provisional = false) {
+    if (!text.trim()) return;
+    if (turn.transcribed && !(turn.provisional && !provisional)) return;
     turn.transcribed = true;
+    turn.provisional = provisional;
+    if (provisional) { await options.onEvent(turn.binding, { type: "final_transcript", text: text.trim() }); return; }
     // The browser stops its microphone once it sees the transcript, so tell the
     // provider the input is finished too. Without this it waits for audio that
     // is never coming and ends the turn with CLIENT_MESSAGE_TIMEOUT while the
@@ -201,6 +209,12 @@ export function createVoiceProvider(options: Options) {
     await options.onEvent(turn.binding, { type: "final_transcript", text: text.trim() });
   }
 
+  /**
+   * Approves a conversational sentence, or stops one that speaks a number
+   * nobody gave it. A turn approved by a function call spoke a value this
+   * server computed and is trusted to repeat it; a turn that only talked may
+   * use the learner's own numbers and no others.
+   */
   async function heard(turn: ActiveTurn, role: string | undefined, content: string) {
     if (role === "user") {
       for (const value of numbersIn(content)) turn.allowed.add(value);
@@ -266,7 +280,7 @@ export function createVoiceProvider(options: Options) {
     const turn: ActiveTurn = {
       binding, token, model, socket, format, active: true, ready: false,
       inputStopped: false, approved: false, audioStarted: false, resolveReady,
-      heldAudio: [], allowed: new Set(), spoken: [], transcribed: false,
+      heldAudio: [], allowed: new Set(), spoken: [], transcribed: false, provisional: false,
     };
     tokens.set(token, turn);
     turns.set(binding.turnId, turn);
@@ -466,7 +480,7 @@ export function createVoiceProvider(options: Options) {
             || reply.facts.every((fact) => fact.chartSnapshotId === turn.binding.chartSnapshotId);
           if (grounded) {
             text = renderSafeReply(reply);
-            await transcript(turn, asked.data.question);
+            await transcript(turn, asked.data.question, true);
             await options.onEvent(turn.binding, { type: "response", reply });
             // Only a reply this server computed unlocks playback.
             await approve(turn, "function");

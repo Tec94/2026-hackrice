@@ -186,15 +186,25 @@ export class VoiceClient {
       throw new Error(`Voice unavailable (${message.error.code}). Check provider setup and playback validation.`);
     }
     if (message.type === 'analysis.draft') {
+      // Every turn opens a new socket and is replayed the whole session, so a
+      // draft from an earlier turn arrives again here. Applying it would undo
+      // any edit the learner has since made by hand, and would approve this
+      // turn's playback before it has produced anything.
+      if (message.turnId !== turn.id) return;
       // The server computed this from the learner's own words, so the turn
       // has an approved reply even though no calculation was spoken.
-      if (this.turn) this.turn.approved = true;
+      turn.approved = true;
       this.callbacks.draft(message.draft);
       return;
     }
     // A rating is likewise the server's own work, and a turn that only rated
-    // the analysis would otherwise have nothing to approve its speech.
-    if (message.type === 'evaluation.updated') { if (this.turn) this.turn.approved = true; return; }
+    // the analysis would otherwise have nothing to approve its speech. Ratings
+    // also arrive from submission and background jobs, which belong to no turn
+    // and must never approve one.
+    if (message.type === 'evaluation.updated') {
+      if (message.turnId === turn.id) turn.approved = true;
+      return;
+    }
     if (!('turnId' in message) || message.turnId !== turn.id) return;
     if ('chartSnapshotId' in message && message.chartSnapshotId !== turn.snapshotId) throw new Error('Voice snapshot mismatch.');
     if (message.type === 'voice.ready') { turn.listening = true; this.callbacks.state('listening'); }
@@ -205,7 +215,14 @@ export class VoiceClient {
       turn.audioStarted = true; turn.outputRate = message.format.sampleRateHz;
     }
     if (message.type === 'assistant.completed') { turn.generated = true; this.finishPlayback(turn); }
-    if (message.type === 'assistant.cancelled') this.cancel();
+    if (message.type === 'assistant.cancelled') {
+      // Usually a barge-in: the learner talked over the coach. The turn is
+      // over but the conversation is not, so finish like any other turn and
+      // let the sidebar open the microphone for what they are saying. Calling
+      // cancel() alone would leave the stream live with nothing listening.
+      this.cancel();
+      this.callbacks.complete();
+    }
   }
 
   stop() {
