@@ -83,6 +83,20 @@ export default function AnalysisFeedbackPage({
     if (!busy && (history || error))
       window.dispatchEvent(new Event("chartroom:feedback-ready"));
   }, [history, error, busy]);
+  // A devnet receipt confirms on its own a few seconds after submitting, but
+  // nothing pushes that to this page, so reveal stayed locked until a reload.
+  // Check until it settles, then stop; the refresh button remains for retrying
+  // a receipt that failed.
+  useEffect(() => {
+    if (!receipt || receipt.status === "confirmed" || receipt.status === "failed") return;
+    let live = true;
+    const timer = setInterval(() => {
+      void request("refreshReceipt", { params: { sessionId } })
+        .then((next) => { if (live) setReceipt(next); })
+        .catch(() => {});
+    }, 4000);
+    return () => { live = false; clearInterval(timer); };
+  }, [receipt, sessionId]);
   const submission = history?.submissions[0]?.submission;
   const snapshot = history?.snapshots?.find(
     (s) => s.id === submission?.chartSnapshotId,

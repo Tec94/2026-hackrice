@@ -118,7 +118,14 @@ export async function buildApp(options: AppOptions) {
     realtime.cancelSession(sid(r));
     await changed(r);
     // Receipt/memory work is durable and explicitly refreshable; no timer polling or hidden retry budget.
-    void jobs.receipt(user(r), sid(r)).then(() => jobs.syncLearning(user(r), sid(r))).catch(() => {});
+    // Tell the open page when the receipt lands, the same way the rating does.
+    // Without this the reveal button stays locked until the learner reloads,
+    // even though the confirmation arrived seconds after they submitted.
+    void jobs.receipt(user(r), sid(r))
+      .then(() => changed(r))
+      .then(() => jobs.syncLearning(user(r), sid(r)))
+      .then(() => changed(r))
+      .catch(() => {});
     // The coach's rating is likewise durable and refreshable. The placeholder is
     // set before responding so the feedback page knows to wait for it.
     await jobs.markRating(user(r), sid(r));
