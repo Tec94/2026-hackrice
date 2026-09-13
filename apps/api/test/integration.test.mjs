@@ -8,6 +8,7 @@ import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import WebSocket from "ws";
 import * as C from "@hackrice/contracts";
 import { buildApp } from "../dist/server.js";
+import { isReceiptBypassEnabled } from "../dist/service.js";
 import { connectDatabase, migrate } from "../dist/database.js";
 import { Recordings } from "../dist/recordings.js";
 import { RETENTION_MS } from "../dist/domain.js";
@@ -526,4 +527,34 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
     assert.equal(deletion.status, "completed");
     assert.equal(deletion.backboard, "not_used");
   });
+  await t.test("testing bypass permits owned submitted replays without confirming a receipt", async () => {
+    assert.equal(isReceiptBypassEnabled({}), false);
+    assert.equal(isReceiptBypassEnabled({ NODE_ENV: "production", HACKRICE_BYPASS_RECEIPT: "true" }), false);
+    const previous = process.env.HACKRICE_BYPASS_RECEIPT;
+    try {
+      process.env.HACKRICE_BYPASS_RECEIPT = "false";
+      const replay = await create(alice);
+      const snap = await context(alice, replay);
+      const path = `/api/sessions/${replay.id}`;
+      assert.equal(status(await request(undefined, "GET", "/health"), 200).receiptBypassEnabled, false);
+      process.env.HACKRICE_BYPASS_RECEIPT = "true";
+      assert.equal(status(await request(undefined, "GET", "/health"), 200).receiptBypassEnabled, true);
+      status(await request(alice.cookie, "POST", `${path}/reveal`), 409);
+      await app.replayService.submit(alice.userId, replay.id, {
+        chartSnapshotId: snap.id, thesis: "Testing without a receipt", prediction: "higher",
+        hypotheticalAction: "wait", confidencePercent: 50, claimedEvidence: [],
+      }, randomUUID());
+      process.env.HACKRICE_BYPASS_RECEIPT = "false";
+      status(await request(alice.cookie, "POST", `${path}/reveal`), 409);
+      process.env.HACKRICE_BYPASS_RECEIPT = "true";
+      status(await request(bob.cookie, "POST", `${path}/reveal`), 404);
+      const revealed = status(await request(alice.cookie, "POST", `${path}/reveal`), 200);
+      assert.equal(revealed.session.status, "revealed");
+      assert.equal(status(await request(alice.cookie, "GET", `${path}/receipt`), 200).status, "unavailable");
+    } finally {
+      if (previous === undefined) delete process.env.HACKRICE_BYPASS_RECEIPT;
+      else process.env.HACKRICE_BYPASS_RECEIPT = previous;
+    }
+  });
+
 });

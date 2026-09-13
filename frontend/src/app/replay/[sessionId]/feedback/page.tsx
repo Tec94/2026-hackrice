@@ -9,6 +9,7 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { FeedbackPanel } from "@/components/feedback/FeedbackPanel";
 import { Button, ErrorBanner, Skeleton } from "@/components/ui";
 import { request, isApiError } from "@/services/api-client";
+
 import { toChartCandles, type ChartCandle } from "@/adapters/chart";
 import { snapshotDrawings, snapshotIndicators } from "@/adapters/snapshot";
 const TradingViewChart = dynamic(
@@ -25,6 +26,17 @@ export default function AnalysisFeedbackPage({
 }) {
   const { sessionId } = use(params);
   const router = useRouter();
+  const [receiptBypassEnabled, setReceiptBypassEnabled] = useState(false);
+  useEffect(() => {
+    const abort = new AbortController();
+    void fetch("/health", { signal: abort.signal, cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((health) =>
+        setReceiptBypassEnabled(health?.receiptBypassEnabled === true),
+      )
+      .catch(() => {});
+    return () => abort.abort();
+  }, []);
   const [history, setHistory] = useState<z.infer<typeof C.History> | null>(
     null,
   );
@@ -98,7 +110,7 @@ export default function AnalysisFeedbackPage({
         status={history?.session.status ?? "submitted"}
         timeframe={snapshot?.timeframe ?? history?.session.timeframe}
         horizon={history?.session.predictionHorizon}
-        revealReady={receipt?.status === "confirmed"}
+        revealReady={receipt?.status === "confirmed" || receiptBypassEnabled}
       />
       <main className="feedback-layout">
         <section className="feedback-chart" aria-label="Chart as submitted">
@@ -276,7 +288,7 @@ export default function AnalysisFeedbackPage({
                     </a>
                   )}
                 </div>
-                {receipt.status !== "confirmed" && (
+                {receipt.status !== "confirmed" && !receiptBypassEnabled && (
                   <>
                     {receipt.status !== "unavailable" && (
                       <p className="text-tiny text-ink-muted">
@@ -317,7 +329,11 @@ export default function AnalysisFeedbackPage({
             <Button
               variant="primary"
               className="w-full"
-              disabled={!revealed && receipt?.status !== "confirmed"}
+              disabled={
+                !revealed &&
+                receipt?.status !== "confirmed" &&
+                !receiptBypassEnabled
+              }
               onClick={() => router.push(`/replay/${sessionId}/reveal`)}
             >
               {revealed

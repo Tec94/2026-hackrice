@@ -278,3 +278,10 @@ The UI never interprets the illustrative ±0.25% band as policy. Free-text
 invalidation remains unassessed. Reflection is read back on completed-session
 review. A voice failure now releases the microphone; ordinary turn completion
 retains it only while the user keeps the conversation open.
+
+For local testing, set `HACKRICE_BYPASS_RECEIPT=true` in the API environment and
+restart the API. `/health` exposes `receiptBypassEnabled`, which the feedback
+screen uses to enable reveal without offering receipt retries. The session must
+still belong to the caller and have a submitted analysis. Receipt status stays
+unchanged. The bypass is disabled when `NODE_ENV=production` or the flag is off;
+no separate frontend flag is required.

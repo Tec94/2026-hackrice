@@ -11,9 +11,13 @@ import type { Queryable } from "./database.js";
 const minute = 60_000;
 const hour = C.timeframeMinutes["1h"] * minute;
 export const decimalPolicy = { precision: Decimal.precision, rounding: Decimal.rounding };
+export function isReceiptBypassEnabled(environment = process.env) {
+  return environment.NODE_ENV !== "production" && environment.HACKRICE_BYPASS_RECEIPT === "true";
+}
 
 export class ReplayService {
   constructor(public store: Store) {}
+  get receiptBypassEnabled() { return isReceiptBypassEnabled(); }
 
   async create(userId: string, input: z.infer<typeof C.CreateSession>, key: string) {
     return this.store.mutate(userId, "create", key, input, undefined, async (tx) => {
@@ -173,7 +177,8 @@ export class ReplayService {
         const previous = state.events.find(event => event.type === "session.revealed");
         if (previous?.type === "session.revealed") return C.Reveal.parse({ ...previous.result, session: state.public });
       }
-      if (state.public.status !== "submitted" || !receiptAllowsReveal(state.receipt) || state.receipt?.commitment !== state.commitment?.hash) return fail("state_conflict", 409);
+      const receiptValid = receiptAllowsReveal(state.receipt) && state.receipt?.commitment === state.commitment?.hash;
+      if (state.public.status !== "submitted" || (!receiptValid && !this.receiptBypassEnabled)) return fail("state_conflict", 409);
       const candles = await this.store.candles(state.datasetId, tx);
       const reference = candles.find((c) => c.closeTimeMs === state.cutoffTimeMs);
       const horizon = candles.find((c) => c.closeTimeMs === state.cutoffTimeMs + C.timeframeMinutes[state.public.predictionHorizon] * minute);
