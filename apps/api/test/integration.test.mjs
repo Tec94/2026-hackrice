@@ -527,3 +527,56 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
     assert.equal(deletion.backboard, "not_used");
   });
 });
+
+test("a pinned demo cutoff fixes the chart, and without one it stays random", async (t) => {
+  const { ReplayService } = await import("../dist/service.js");
+  const { Store } = await import("../dist/store.js");
+  const { connectDatabase: connect, migrate: run } = await import("../dist/database.js");
+
+  // Enough history for several eligible cutoffs, so pinning has something to choose between.
+  const hours = historyHours + 6;
+  const bars = Array.from({ length: (hours + 1) * C.timeframeMinutes["1h"] / C.timeframeMinutes["5m"] }, (_, index) => ({
+    openTimeMs: sourceStart + index * C.timeframeMinutes["5m"] * minute,
+    closeTimeMs: sourceStart + (index + 1) * C.timeframeMinutes["5m"] * minute,
+    open: String(100 + index), high: String(102 + index), low: String(99 + index),
+    close: String(101 + index), volume: String(10 + index),
+  }));
+
+  const db = await connect({ local: true, localPath: "memory://" });
+  t.after(async () => { await db.close(); });
+  await run(db);
+  // Sessions and idempotency keys reference a real user row.
+  const at = new Date(sourceStart).toISOString();
+  await db.query(
+    'INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at) VALUES ($1,$2,$3,false,$4,$4)',
+    ["demo-user", "Demo", "demo@example.test", at],
+  );
+  const store = new Store(db);
+  await store.importDataset({
+    candles: bars,
+    digest: createHash("sha256").update(JSON.stringify(bars)).digest("hex"),
+    source: "Synthetic integration fixture; not market data",
+  });
+
+  const open = (service) => service.create("demo-user", { timeframe: "1h", predictionHorizon: "1h" }, randomUUID());
+
+  // Pinned: every session cuts in the same place.
+  const pin = sourceStart + (historyHours + 2) * C.timeframeMinutes["1h"] * minute;
+  const pinned = new ReplayService(store, pin);
+  const first = await open(pinned);
+  const second = await open(pinned);
+  const cutOf = async (session) => (await store.read("demo-user", session.id)).cutoffTimeMs;
+  assert.equal(await cutOf(first), pin);
+  assert.equal(await cutOf(second), pin, "the demo chart does not move between runs");
+
+  // Unpinned: the app behaves as it always did. Over many sessions at least one
+  // lands somewhere else, which a fixed cutoff could never do.
+  const normal = new ReplayService(store);
+  const seen = new Set();
+  for (let attempt = 0; attempt < 30; attempt++) seen.add(await cutOf(await open(normal)));
+  assert.ok(seen.size > 1, "without the flag the cutoff is still chosen at random");
+
+  // An unusable pin falls back rather than breaking session creation.
+  const stray = new ReplayService(store, sourceStart + 17 * minute);
+  assert.ok(await cutOf(await open(stray)), "a cutoff that is not a candidate still opens a session");
+});

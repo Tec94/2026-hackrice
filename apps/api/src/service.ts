@@ -13,7 +13,7 @@ const hour = C.timeframeMinutes["1h"] * minute;
 export const decimalPolicy = { precision: Decimal.precision, rounding: Decimal.rounding };
 
 export class ReplayService {
-  constructor(public store: Store) {}
+  constructor(public store: Store, private demoCutoffTimeMs?: number) {}
 
   async create(userId: string, input: z.infer<typeof C.CreateSession>, key: string) {
     return this.store.mutate(userId, "create", key, input, undefined, async (tx) => {
@@ -29,7 +29,12 @@ export class ReplayService {
         }
       }
       if (!candidates.length) return fail("insufficient_data", 409);
-      const candidate = candidates[randomInt(candidates.length)]!;
+      // A pinned cutoff makes the chart the same every run, which is what lets
+      // a demo be rehearsed. If it is not among the candidates the session
+      // falls back to a random one rather than failing outright.
+      const pinned = this.demoCutoffTimeMs === undefined ? undefined
+        : candidates.find((item) => item.cutoffTimeMs === this.demoCutoffTimeMs);
+      const candidate = pinned ?? candidates[randomInt(candidates.length)]!;
       const now = this.store.now();
       const session = C.PublicSession.parse({
         id: randomUUID(), symbol: "SOL/USDT", status: "exploring", timeframe: input.timeframe,

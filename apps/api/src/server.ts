@@ -16,7 +16,7 @@ import type { createBackboardProvider } from "./providers/backboard.js";
 import type { AnalysisRater } from "./providers/rater.js";
 
 export type AppOptions = { db: Database; service?: ReplayService; recordingsDirectory: string; baseURL: string;
-  authSecret: string; voiceConfig?: VoiceConfig; solanaProvider?: SolanaReceiptProvider;
+  authSecret: string; voiceConfig?: VoiceConfig; solanaProvider?: SolanaReceiptProvider; demoCutoffTimeMs?: number;
   backboardProvider?: ReturnType<typeof createBackboardProvider>; rater?: AnalysisRater; now?: () => number };
 
 declare module "fastify" {
@@ -34,7 +34,7 @@ function headers(input: Record<string, string | string[] | undefined>): Headers 
 
 export async function buildApp(options: AppOptions) {
   const app = Fastify({ logger: false, genReqId: () => randomUUID() });
-  const service = options.service ?? new ReplayService(new Store(options.db, options.now));
+  const service = options.service ?? new ReplayService(new Store(options.db, options.now), options.demoCutoffTimeMs);
   const auth = createAuth(options.db, options.baseURL, options.authSecret);
   const recordings = new Recordings(options.recordingsDirectory);
   // 16kHz linear PCM is Deepgram's documented default sample rate, explicitly negotiated in each session.

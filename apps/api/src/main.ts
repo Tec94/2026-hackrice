@@ -14,10 +14,14 @@ await migrate(db);
 const app = await buildApp({ db, recordingsDirectory: settings.recordingsDirectory, baseURL: settings.baseURL,
   authSecret: settings.authSecret, voiceConfig: settings.voice,
   solanaProvider: createSolanaReceiptProvider(settings.solana), backboardProvider: createBackboardProvider({ apiKey: settings.backboardApiKey }),
-  rater: createAnalysisRater({ deepgramApiKey: settings.voice?.deepgramApiKey, model: settings.voice?.conversationModel }) });
+  rater: createAnalysisRater({ deepgramApiKey: settings.voice?.deepgramApiKey, model: settings.voice?.conversationModel }),
+  ...(settings.demoCutoffTimeMs === undefined ? {} : { demoCutoffTimeMs: settings.demoCutoffTimeMs }) });
 await app.jobs.run();
 const address = await app.listen({ host: settings.host, port: settings.port });
 console.log(`Chart coach API listening at ${address} (${db.mode}).`);
+if (settings.demoCutoffTimeMs !== undefined) {
+  console.log(`Demo mode: every new session cuts at ${new Date(settings.demoCutoffTimeMs).toISOString()}.`);
+}
 let closing = false;
 async function close() {
   if (closing) return;
