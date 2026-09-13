@@ -387,3 +387,37 @@ test("a question can name a candle before the cutoff", () => {
   assert.equal(calculation("What was the close 500 candles before the cutoff?").kind, "refusal");
   assert.equal(calculation("What is the close 3 candles after the cutoff?").kind, "refusal");
 });
+
+test("the coach answers computable questions about the past and still refuses the future", () => {
+  // An indicator may name an earlier candle, not just a plain price.
+  const rsi = parseQuestionIntent("what was the rsi 14 3 candles ago");
+  assert.equal(rsi.kind, "metric");
+  assert.equal(rsi.metric, "rsi");
+  assert.equal(rsi.period, 14);
+  assert.equal(rsi.barsBack, 3);
+
+  // How far it travelled and how volatile it was are the visible extremes.
+  for (const text of ["what was the biggest move", "what was the price range", "how volatile was it"]) {
+    const intent = parseQuestionIntent(text);
+    assert.equal(intent.kind, "metrics", text);
+    assert.deepEqual(intent.metrics, ["visible_high", "visible_low"], text);
+  }
+
+  // "before the cutoff" with no count is a scope, not a lookback: everything
+  // visible is already before the cutoff, so it must not change the metric.
+  const scoped = parseQuestionIntent("what was the high before the cutoff");
+  assert.equal(scoped.kind, "metric");
+  assert.equal(scoped.metric, "high");
+  assert.equal(scoped.barsBack, undefined, "no count means no lookback");
+  // A counted one still reads as a lookback.
+  assert.equal(parseQuestionIntent("what was the close 3 candles before the cutoff").barsBack, 3);
+
+  // Widening the past must never widen the future.
+  for (const text of [
+    "what will the price be", "what happens next", "how volatile will it be",
+    "what was the biggest move tomorrow", "what is the close after the cutoff",
+    "should i buy before the cutoff", "what was the news before the cutoff",
+  ]) {
+    assert.equal(parseQuestionIntent(text).kind, "refusal", text);
+  }
+});

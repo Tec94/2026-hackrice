@@ -303,7 +303,9 @@ export function parseQuestionIntent(text: string): Intent {
     .replace(/ (?:in|on|over|across|within) (?:this|the) (?:area|region|zone|range|window|screen|view|chart|section)$/, " visible")
     .replace(/ (?:in|on) (?:this|the) (?:visible )?(?:area|range|window|view)$/, " visible")
     .replace(/ (?:right )?(?:here|on screen|on the screen)$/, " visible")
+    .replace(/(?<!\b(?:candles?|bars?|minutes?|mins?|hours?|days?|weeks?)) (?:just )?(?:before|up to|until|prior to) (?:the )?cut-? ?off$/, "")
     .replace(/^what should (?:the )?(.+?) be$/, "what is the $1")
+    .replace(/^how volatile (?:was|is) (?:it|the price|this)\b/, "what is the volatility")
     .replace(/\s+/g, " ").trim();
   if (/\b(news|headline|date|year)\b/.test(question)) return { kind: "refusal", reason: "news" };
   if (/\b(future|next|tomorrow|outcome|predict|prediction|will|win|reveal)\b/.test(question)) return { kind: "refusal", reason: "future" };
@@ -325,13 +327,22 @@ export function parseQuestionIntent(text: string): Intent {
   if (concept && concepts[concept[1]!]) return { kind: "concept", concept: concepts[concept[1]!]! };
   // "what was" belongs here too: a question about an earlier candle is
   // naturally asked in the past tense.
-  const expression = corrected.replace(/^(?:(?:what is|what was|what were|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
+  const phrase = corrected.replace(/^(?:(?:what is|what was|what were|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
     .replace(/^(?:the |a |an )/, "").replace(/^current /, "")
     .replace(/ (?:for |of )?(?:the )?(?:selected|latest) (?:candle|bar)$/, "").replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+  // A question may name an earlier candle. Stripping that wording once, here,
+  // lets every matcher below work from the bare phrase, so an indicator and a
+  // plain price both accept a lookback without each repeating the parsing.
+  const lookback = parseLookback(phrase);
+  const back: Pick<Extract<Intent, { kind: "metric" }>, "barsBack" | "minutesBack"> = {
+    ...(lookback.barsBack !== undefined ? { barsBack: lookback.barsBack } : {}),
+    ...(lookback.minutesBack !== undefined ? { minutesBack: lookback.minutesBack } : {}),
+  };
+  const expression = lookback.rest;
   const indicator = /^(ema|exponential moving average|rsi|relative strength index|relative volume)(?: over| period)? (\d+)(?: bars| periods)?$/.exec(expression);
   if (indicator) {
     const period = Number(indicator[2]);
-    if (Number.isSafeInteger(period) && period > 0) return { kind: "metric", metric: concepts[indicator[1]!] as "ema" | "rsi" | "relative_volume", period };
+    if (Number.isSafeInteger(period) && period > 0) return { kind: "metric", metric: concepts[indicator[1]!] as "ema" | "rsi" | "relative_volume", period, ...back };
   }
   // Asking for two related values in one breath is normal speech; the reply
   // already renders a list of facts, so both halves can be answered at once.
@@ -347,6 +358,18 @@ export function parseQuestionIntent(text: string): Intent {
     "open and close": ["open", "close"], "close and open": ["close", "open"],
     "high and low price": ["high", "low"], "low and high price": ["low", "high"],
     "range": ["visible_high", "visible_low"], "range visible": ["visible_high", "visible_low"],
+    // Asking how far it travelled, or how volatile it was, is asking for the
+    // extremes of what is on screen. Both values are already computed from the
+    // visible candles, so this is new wording rather than new arithmetic.
+    "price range": ["visible_high", "visible_low"],
+    "range of the price": ["visible_high", "visible_low"],
+    "trading range": ["visible_high", "visible_low"],
+    "biggest move": ["visible_high", "visible_low"],
+    "largest move": ["visible_high", "visible_low"],
+    "biggest swing": ["visible_high", "visible_low"],
+    "volatility": ["visible_high", "visible_low"],
+    "volatile": ["visible_high", "visible_low"],
+    "how volatile it was": ["visible_high", "visible_low"],
   };
   if (pairs[expression]) return { kind: "metrics", metrics: pairs[expression]! };
   // Spoken synonyms only. Every value is an existing Metric member, so widening
@@ -374,18 +397,7 @@ export function parseQuestionIntent(text: string): Intent {
     "visible low": "visible_low", "lowest visible price": "visible_low",
     "lowest price visible": "visible_low", "low of the visible range": "visible_low",
   };
-  if (metrics[expression]) return { kind: "metric", metric: metrics[expression]! };
-  // A question may name a past candle. The wording is stripped here and the
-  // metric matched on what is left, so every phrasing above works with a
-  // lookback too. Minutes become bars later, once the timeframe is known.
-  const lookback = parseLookback(expression);
-  if ((lookback.barsBack !== undefined || lookback.minutesBack !== undefined) && metrics[lookback.rest]) {
-    return {
-      kind: "metric", metric: metrics[lookback.rest]!,
-      ...(lookback.barsBack !== undefined ? { barsBack: lookback.barsBack } : {}),
-      ...(lookback.minutesBack !== undefined ? { minutesBack: lookback.minutesBack } : {}),
-    };
-  }
+  if (metrics[expression]) return { kind: "metric", metric: metrics[expression]!, ...back };
   const drawing = /^distance to drawing ([0-9a-f-]+)$/.exec(expression);
   if (drawing) return { kind: "metric", metric: "distance_to_drawing", drawingId: drawing[1]! };
   return { kind: "refusal", reason: "unsupported" };
