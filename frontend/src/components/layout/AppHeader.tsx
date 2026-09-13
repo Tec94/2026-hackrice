@@ -22,7 +22,7 @@ export function Brand() {
   return (
     <Link href="/" className="brand">
       <Logo size={28} decorative />
-      Chartroom
+      FIanal.sim
     </Link>
   );
 }

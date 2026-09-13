@@ -16,7 +16,7 @@ import type { createBackboardProvider } from "./providers/backboard.js";
 import type { AnalysisRater } from "./providers/rater.js";
 
 export type AppOptions = { db: Database; service?: ReplayService; recordingsDirectory: string; baseURL: string;
-  authSecret: string; voiceConfig?: VoiceConfig; solanaProvider?: SolanaReceiptProvider;
+  authSecret: string; voiceConfig?: VoiceConfig; solanaProvider?: SolanaReceiptProvider; demoCutoffTimeMs?: number;
   backboardProvider?: ReturnType<typeof createBackboardProvider>; rater?: AnalysisRater; now?: () => number };
 
 declare module "fastify" {
@@ -34,7 +34,7 @@ function headers(input: Record<string, string | string[] | undefined>): Headers 
 
 export async function buildApp(options: AppOptions) {
   const app = Fastify({ logger: false, genReqId: () => randomUUID() });
-  const service = options.service ?? new ReplayService(new Store(options.db, options.now));
+  const service = options.service ?? new ReplayService(new Store(options.db, options.now), options.demoCutoffTimeMs);
   const auth = createAuth(options.db, options.baseURL, options.authSecret);
   const recordings = new Recordings(options.recordingsDirectory);
   // 16kHz linear PCM is Deepgram's documented default sample rate, explicitly negotiated in each session.
@@ -66,8 +66,15 @@ export async function buildApp(options: AppOptions) {
       code: known ? error.code : invalid ? "invalid_request" : "provider_unavailable", requestId: request.id,
     }));
   });
-  app.get("/health", async () => ({ status: "ok", databaseMode: options.db.mode, voiceEnabled: !!options.voiceConfig?.playbackValidated,
-    receiptBypassEnabled: service.receiptBypassEnabled }));
+  app.get("/health", async () => ({
+    status: "ok",
+    databaseMode: options.db.mode,
+    voiceEnabled: !!options.voiceConfig?.playbackValidated,
+    receiptBypassEnabled: service.receiptBypassEnabled,
+    ...(options.demoCutoffTimeMs === undefined
+      ? {}
+      : { demoCutoff: new Date(options.demoCutoffTimeMs).toISOString() }),
+  }));
   app.route({ method: ["GET", "POST"], url: "/api/auth/*", handler: async (request, reply) => {
     const result = await auth.handler(new Request(new URL(request.url, options.baseURL), {
       method: request.method, headers: headers(request.headers),
@@ -119,7 +126,14 @@ export async function buildApp(options: AppOptions) {
     realtime.cancelSession(sid(r));
     await changed(r);
     // Receipt/memory work is durable and explicitly refreshable; no timer polling or hidden retry budget.
-    void jobs.receipt(user(r), sid(r)).then(() => jobs.syncLearning(user(r), sid(r))).catch(() => {});
+    // Tell the open page when the receipt lands, the same way the rating does.
+    // Without this the reveal button stays locked until the learner reloads,
+    // even though the confirmation arrived seconds after they submitted.
+    void jobs.receipt(user(r), sid(r))
+      .then(() => changed(r))
+      .then(() => jobs.syncLearning(user(r), sid(r)))
+      .then(() => changed(r))
+      .catch(() => {});
     // The coach's rating is likewise durable and refreshable. The placeholder is
     // set before responding so the feedback page knows to wait for it.
     await jobs.markRating(user(r), sid(r));

@@ -26,7 +26,7 @@ export default function DesignSystemPage() {
     <div className="min-h-screen">
       <AppHeader />
       <main className="page-shell py-14">
-        <p className="eyebrow">Chartroom · design and motion system</p>
+        <p className="eyebrow">FIanal.sim · design and motion system</p>
         <h1 className="mt-5 text-display font-semibold tracking-tight">
           Same identity, more depth.
         </h1>

@@ -233,12 +233,27 @@ const refusalText = {
 };
 
 /** Render only validated template inputs. The backend still verifies every fact against the frozen snapshot. */
+/**
+ * Trims a computed value to something a person can say.
+ *
+ * An indicator carries full precision internally, and reading twenty decimal
+ * places aloud is unusable. This is also what the coach is allowed to speak:
+ * the number guard allowlists the rendered text, so rounding here and nowhere
+ * else keeps the spoken figure and the approved figure identical. The stored
+ * fact keeps its full precision for evidence checks.
+ */
+function spoken(value: string): string {
+  if (!value.includes(".")) return value;
+  const trimmed = Number(value).toFixed(2).replace(/\.?0+$/, "");
+  return trimmed === "" || trimmed === "-" ? value : trimmed;
+}
+
 export function renderSafeReply(input: unknown): string {
   const reply = SafeReply.parse(input);
   if (reply.kind === "concept") return conceptText[reply.concept];
   if (reply.kind === "refusal") return refusalText[reply.reason];
   if (reply.kind === "conversation") return reply.text;
-  return reply.facts.map((fact) => `${metricLabels[fact.metric]}${fact.period ? ` over ${fact.period} bars` : ""}: ${fact.value} ${fact.unit}.`).join(" ");
+  return reply.facts.map((fact) => `${metricLabels[fact.metric]}${fact.period ? ` over ${fact.period} bars` : ""}: ${spoken(fact.value)} ${fact.unit}.`).join(" ");
 }
 
 export const ErrorCode = z.enum([

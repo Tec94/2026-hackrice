@@ -33,8 +33,20 @@ export async function config(env: NodeJS.ProcessEnv = process.env) {
     const secret = z.array(z.number().int().min(0).max(255)).parse(JSON.parse(await readFile(resolve(env.SOLANA_DEVNET_KEYPAIR_PATH), "utf8")));
     solana = { network: "devnet", rpcUrl: env.SOLANA_DEVNET_RPC_URL, secretKey: Uint8Array.from(secret) };
   }
+  // Pins every new session to one cutoff so a demo can be rehearsed. The data
+  // and the grading stay real; only the choice of where to cut stops being
+  // random. Unset in normal use, and an unusable value fails at startup rather
+  // than quietly going back to random and surprising someone mid-demo.
+  let demoCutoffTimeMs: number | undefined;
+  if (env.DEMO_CUTOFF) {
+    const parsed = Date.parse(env.DEMO_CUTOFF);
+    if (!Number.isFinite(parsed)) throw new Error("DEMO_CUTOFF must be an ISO timestamp, for example 2026-03-14T08:00:00Z.");
+    if (parsed % 3_600_000 !== 0) throw new Error("DEMO_CUTOFF must fall on the hour; sessions cut on hour boundaries.");
+    demoCutoffTimeMs = parsed;
+  }
+
   return {
-    local, databaseURL: env.DATABASE_URL, allowUnverifiedTLS: env.DATABASE_ALLOW_UNVERIFIED_TLS === "true", localPath: resolve(env.LOCAL_DATABASE_PATH ?? ".data/postgres"),
+    local, demoCutoffTimeMs, databaseURL: env.DATABASE_URL, allowUnverifiedTLS: env.DATABASE_ALLOW_UNVERIFIED_TLS === "true", localPath: resolve(env.LOCAL_DATABASE_PATH ?? ".data/postgres"),
     recordingsDirectory: resolve(env.RECORDINGS_PATH ?? ".data/recordings"), baseURL, authSecret, voice, solana,
     backboardApiKey: env.BACKBOARD_API_KEY,
     port: z.coerce.number().int().min(0).max(65535).parse(env.PORT ?? (new URL(baseURL).port || (new URL(baseURL).protocol === "https:" ? 443 : 80))),
