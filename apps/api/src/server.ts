@@ -66,7 +66,15 @@ export async function buildApp(options: AppOptions) {
       code: known ? error.code : invalid ? "invalid_request" : "provider_unavailable", requestId: request.id,
     }));
   });
-  app.get("/health", async () => ({ status: "ok", databaseMode: options.db.mode, voiceEnabled: !!options.voiceConfig?.playbackValidated }));
+  // demoCutoff appears only when a chart is pinned, so one call to /health
+  // answers "am I on the rehearsal chart or a real random one".
+  app.get("/health", async () => ({
+    status: "ok", databaseMode: options.db.mode,
+    voiceEnabled: !!options.voiceConfig?.playbackValidated,
+    ...(options.demoCutoffTimeMs === undefined
+      ? {}
+      : { demoCutoff: new Date(options.demoCutoffTimeMs).toISOString() }),
+  }));
   app.route({ method: ["GET", "POST"], url: "/api/auth/*", handler: async (request, reply) => {
     const result = await auth.handler(new Request(new URL(request.url, options.baseURL), {
       method: request.method, headers: headers(request.headers),

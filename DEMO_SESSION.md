@@ -28,6 +28,43 @@ Remove the line and restart to go back to random cutoffs.
 
 ---
 
+## How to tell which chart you are on
+
+**From the chart itself, which is the check that works while filming.** Ask the
+coach for the closing price. On the demo chart it is **131.10**, every time. Any
+other number means you are on a random chart and your rehearsed analysis will
+be wrong.
+
+**From the server**, if you want to be certain before you start:
+
+```
+curl http://127.0.0.1:4000/health
+```
+
+Pinned:
+
+```json
+{"status":"ok","databaseMode":"local","voiceEnabled":true,"demoCutoff":"2024-03-05T19:00:00.000Z"}
+```
+
+Normal, with no demoCutoff field at all:
+
+```json
+{"status":"ok","databaseMode":"local","voiceEnabled":true}
+```
+
+**From the startup log**, which prints one line when demo mode is on:
+
+```
+Demo mode: every new session cuts at 2024-03-05T19:00:00.000Z.
+```
+
+One catch worth knowing: a session keeps the cutoff it was created with. If you
+set the flag while a session is already open, that old session is still on its
+random chart. Start a new one.
+
+---
+
 ## The situation
 
 Solana against the dollar, hourly bars, one hour ahead. 115 bars of history
