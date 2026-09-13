@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { History, LayoutDashboard, User } from "lucide-react";
 import { Select } from "@/components/ui";
+import { Logo } from "@/components/brand/Logo";
 import { SESSION_PHASES, type SessionPhase } from "@/view-models";
 import { SUPPORTED_TIMEFRAMES, type Timeframe } from "@/adapters/chart";
 import { cn } from "@/utilities/cn";
@@ -45,7 +46,7 @@ export function ReplayHeader({
         href="/"
         className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
       >
-        <span aria-hidden="true" className="h-4 w-1.5 rounded-sm bg-accent-400" />
+        <Logo size={22} title="Chartroom home" />
         <span className="hidden text-base font-semibold tracking-tight sm:inline">Chartroom</span>
       </Link>
 

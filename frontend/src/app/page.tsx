@@ -2,6 +2,7 @@ import Link from "next/link";
 import { HeroChart } from "@/components/landing/HeroChart";
 import { MarketPicker } from "@/components/landing/MarketPicker";
 import { LandingAccount } from "@/components/landing/LandingAccount";
+import { Logo } from "@/components/brand/Logo";
 
 const NAV = [
   { href: "#how", label: "How it works" },
@@ -53,7 +54,7 @@ export default function LandingPage() {
             href="/"
             className="flex shrink-0 items-center gap-2.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
           >
-            <span aria-hidden="true" className="h-4 w-1.5 rounded-sm bg-accent-400" />
+            <Logo size={26} decorative />
             <span className="text-lead font-semibold tracking-tight text-ink">Chartroom</span>
           </Link>
 
@@ -247,7 +248,7 @@ export default function LandingPage() {
       <footer className="border-t border-line/70">
         <div className="page-shell flex flex-wrap items-center gap-x-6 gap-y-2 py-8 text-base text-ink-faint">
           <span className="flex items-center gap-2 text-ink-muted">
-            <span aria-hidden="true" className="h-3.5 w-1 rounded-sm bg-accent-400" />
+            <Logo size={20} decorative />
             Chartroom
           </span>
           <Link href="/history" className="hover:text-ink">

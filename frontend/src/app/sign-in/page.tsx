@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button, ErrorBanner, Input } from "@/components/ui";
+import { Logo } from "@/components/brand/Logo";
 import { getSession, safeReturnPath, signIn, signUp } from "@/services/auth-client";
 
 /**
@@ -66,7 +67,7 @@ function SignInForm() {
     <main className="grid min-h-screen place-items-center px-6 py-12">
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-8 flex items-center gap-2.5">
-          <span aria-hidden="true" className="h-4 w-1.5 rounded-sm bg-accent-400" />
+          <Logo size={26} decorative />
           <span className="text-lead font-semibold tracking-tight text-ink">Chartroom</span>
         </Link>
 
