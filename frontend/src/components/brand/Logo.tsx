@@ -1,17 +1,17 @@
 import { useId } from "react";
 
 /**
- * The Chartroom mark: three rising bars under a trend arc, ending in a node.
+ * The FIanal.sim mark: three rising bars under a trend arc, ending in a node.
  *
  * Drawn rather than loaded so it stays sharp at any size, inherits the
  * surrounding colour where asked, and costs no extra request. `title` is what
- * a screen reader announces; pass `decorative` beside a visible "Chartroom"
+ * a screen reader announces; pass `decorative` beside a visible "FIanal.sim"
  * wordmark so it is not announced twice.
  */
 export function Logo({
   size = 28,
   decorative = false,
-  title = "Chartroom",
+  title = "FIanal.sim",
   className,
 }: {
   size?: number;

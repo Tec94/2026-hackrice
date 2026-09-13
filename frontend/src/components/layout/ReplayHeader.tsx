@@ -46,8 +46,8 @@ export function ReplayHeader({
         href="/"
         className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400"
       >
-        <Logo size={22} title="Chartroom home" />
-        <span className="hidden text-base font-semibold tracking-tight sm:inline">Chartroom</span>
+        <Logo size={22} title="FIanal.sim home" />
+        <span className="hidden text-base font-semibold tracking-tight sm:inline">FIanal.sim</span>
       </Link>
 
       <span className="h-5 w-px shrink-0 bg-line" aria-hidden="true" />

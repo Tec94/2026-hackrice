@@ -142,7 +142,7 @@ export default function LandingPage() {
       <footer className="page-shell flex flex-wrap justify-between gap-3 border-t border-line/50 py-6 text-tiny text-ink-faint">
         <span className="flex items-center gap-2">
           <Logo size={20} decorative />
-          Chartroom · a room for better reasoning
+          FIanal.sim · a room for better reasoning
         </span>
         <Link href="/design-system">Design & motion system</Link>
       </footer>

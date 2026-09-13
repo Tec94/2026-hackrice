@@ -1,4 +1,4 @@
-# Chartroom — Demo Video Script
+# FIanal.sim — Demo Video Script
 
 **Total: 3 minutes 30 seconds.** Word counts assume ~150 words per minute, an
 unhurried pace on camera. Spoken lines are in quotes. Everything else is a
@@ -12,13 +12,13 @@ Fill in before filming: `[MEMBER NAMES]`, `[TRACK / CHALLENGE]`.
 
 **Screen:** the landing page, logo visible.
 
-> "This is Chartroom, by [MEMBER NAMES], for [TRACK / CHALLENGE].
+> "This is FIanal.sim, by [MEMBER NAMES], for [TRACK / CHALLENGE].
 >
 > Most people learn to read a price chart by scrolling back through history,
 > where they already know what happened next. That teaches you to recognise the
 > answer, not to reason toward it.
 >
-> Chartroom hides the right-hand side of a real chart and asks you to explain
+> FIanal.sim hides the right-hand side of a real chart and asks you to explain
 > what you see, out loud, before it shows you what happened.
 >
 > It's a TypeScript monorepo: Next.js and React on the front, Fastify and
@@ -143,7 +143,7 @@ percent confident, and I'd be wrong if it closes back above the recent high."*
 
 **Screen:** back to the chart, or your faces.
 
-> "People lose real money learning this by doing it live. Chartroom gives you
+> "People lose real money learning this by doing it live. FIanal.sim gives you
 > the reps without the losses, and grades the reasoning rather than the outcome
 > — which is what actually transfers.
 >

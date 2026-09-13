@@ -1,6 +1,6 @@
-# Chartroom design and motion system
+# FIanal.sim design and motion system
 
-The supplied `design_system.pdf` and `Chartroom Screens.html` replace the earlier
+The supplied `design_system.pdf` and `FIanal.sim Screens.html` replace the earlier
 polish-only system. The HTML's later screen composition takes precedence: the
 exploring workspace is a chart above a coach / analysis / selected-candle bench.
 The PDF supplies the surface and motion vocabulary. `/design-system` is the

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "../styles/globals.css";
 
 export const metadata: Metadata = {
-  title: "Chartroom — Learn to read a chart",
+  title: "FIanal.sim — Learn to read a chart",
   description:
     "A training environment for practising chart reasoning on historical replays with a voice coach.",
 };
