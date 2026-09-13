@@ -1,4 +1,61 @@
-# What you can ask the coach
+# What to ask the coach
+
+## The five for the demo
+
+Ask these in this order. Each one shows something the last did not, and the
+last one is the point of the whole project.
+
+**1. "What's the closing price?"**
+
+> Closing price: 130.83 USDT.
+
+The plain case. Say that the server computed it from the candles and the model
+is not allowed to do arithmetic.
+
+**2. "What does the candle look like?"**
+
+> Opening price: 130.78. High price: 131.03. Low price: 130.23. Closing price: 130.83.
+
+Four values from one ordinary question. Shows it understands what you mean,
+not just keywords.
+
+**3. "What was the opening price thirty six hours before the cutoff?"**
+
+> Opening price: 129.24 USDT.
+
+A spoken number and a time reference in one breath. It can reach any earlier
+candle, and never past the cutoff.
+
+**4. "What was the trend?"**
+
+> It describes the shape from the values it holds.
+
+No formula exists for this, so the coach reads the chart in words. Say that it
+is told to present this as a reading rather than a fact.
+
+**5. "Should I buy here?"**
+
+> I can calculate values from the visible chart. You choose your own conclusion
+> and hypothetical action.
+
+The refusal, and your best moment. Advice, the future and news are refused
+before the question is even matched, so rephrasing does not get past them.
+
+### If you have time for a sixth
+
+**"How volatile was it?"** answers with the visible high of **142.72** and low
+of **124.17**. It also doubles as your check that you are on the demo chart,
+since that high holds whatever timeframe you are viewing.
+
+### Numbers on this chart
+
+Answers come from the candle you are looking at, so the close reads 130.83 on
+the fifteen minute view and 131.10 on the hourly. Both are right. The visible
+high stays 142.72 either way.
+
+---
+
+## Everything else you can ask
 
 Every question below was run against the live parser. The ones marked answered
 return a computed value; the ones marked described have no formula, so the

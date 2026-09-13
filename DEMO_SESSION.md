@@ -31,9 +31,14 @@ Remove the line and restart to go back to random cutoffs.
 ## How to tell which chart you are on
 
 **From the chart itself, which is the check that works while filming.** Ask the
-coach for the closing price. On the demo chart it is **131.10**, every time. Any
-other number means you are on a random chart and your rehearsed analysis will
-be wrong.
+coach how volatile it was. On the demo chart the visible high is **142.72**,
+whatever timeframe you are on. Any other number means you are on a random chart
+and your rehearsed analysis will be wrong.
+
+Do not use the closing price for this check. The coach answers about the candle
+you are actually looking at, so it reads 131.10 on the hourly view and 130.83
+on the fifteen minute one. Both are correct; neither identifies the chart on its
+own.
 
 **From the server**, if you want to be certain before you start:
 
