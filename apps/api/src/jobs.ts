@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ReplayService } from "./service.js";
-import { Recordings } from "./recordings.js";
+import type { RecordingStore } from "./recordings.js";
 import { createSolanaReceiptProvider, type SolanaReceiptProvider } from "./providers/solana.js";
 import { createBackboardProvider, type MemoryLink, type MemoryOwner, type LearningRecord } from "./providers/backboard.js";
 import { appendEvent, type State } from "./domain.js";
@@ -16,7 +16,7 @@ export class Jobs {
   private locks = new Map<string, Promise<unknown>>();
   private expiryTimer?: NodeJS.Timeout;
   private closed = false;
-  constructor(public service: ReplayService, private recordings: Recordings,
+  constructor(public service: ReplayService, private recordings: RecordingStore,
     public solana: SolanaReceiptProvider = createSolanaReceiptProvider(),
     public backboard: Backboard = createBackboardProvider({}),
     private cancelSession: (id: string) => void = () => {},

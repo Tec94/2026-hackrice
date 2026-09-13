@@ -13,6 +13,7 @@ const nextConfig = {
    * both without CORS or cross-site cookie settings.
    */
   async rewrites() {
+    if (process.env.SERVE_FRONTEND === "true") return [];
     return [
       { source: "/api/:path*", destination: `${API_ORIGIN}/api/:path*` },
       { source: "/health", destination: `${API_ORIGIN}/health` },

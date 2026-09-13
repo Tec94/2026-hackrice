@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: chartroom
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build:render
+    startCommand: npm run start:render
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.18.0
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_FRONTEND
+        value: "true"
+      - key: DATABASE_MODE
+        value: tigerdata
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: RECORDINGS_STORAGE
+        value: database
+      - key: VOICE_PLAYBACK_VALIDATED
+        value: "false"

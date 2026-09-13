@@ -10,6 +10,9 @@
   "scripts": {
     "dev:frontend": "npm run dev -w @hackrice/frontend -- --port 3000",
     "build:frontend": "npm run build -w @hackrice/frontend",
+    "build:render": "npm run build && npm run build:frontend",
+    "start:render": "node --env-file-if-exists=.env scripts/serve.mjs",
+    "test:render": "node --test scripts/test/*.test.mjs",
     "test:frontend": "node --test frontend/test/*.test.mjs",
     "start": "node --env-file-if-exists=.env apps/api/dist/main.js",
     "build": "npm run build -w @hackrice/contracts && npm run build -w @hackrice/api",
@@ -21,7 +24,8 @@
     "demo:brief": "npm run build && node scripts/demo-brief.mjs"
   },
   "dependencies": {
-    "@better-auth/infra": "^0.4.9"
+    "@better-auth/infra": "^0.4.9",
+    "@fastify/http-proxy": "11.6.2"
   },
   "allowScripts": {
     "bufferutil@4.1.0": true,
