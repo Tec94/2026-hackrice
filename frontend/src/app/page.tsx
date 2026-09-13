@@ -3,6 +3,7 @@ import { AppHeader } from "@/components/layout/AppHeader";
 import { ChartIllustration } from "@/components/landing/ChartIllustration";
 import { MarketPicker } from "@/components/landing/MarketPicker";
 import { Logo } from "@/components/brand/Logo";
+import { FaqItem } from "@/components/landing/FaqItem";
 const steps = [
   [
     "The future is hidden",
@@ -37,7 +38,7 @@ const questions = [
 ];
 export default function LandingPage() {
   return (
-    <div className="min-h-screen">
+    <div className="landing-page min-h-screen">
       <AppHeader landing />
       <main>
         <section className="page-shell section-space grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
@@ -107,11 +108,6 @@ export default function LandingPage() {
               <h2 className="text-title font-semibold">
                 A coach that refuses to guess
               </h2>
-              <p className="mt-4 max-w-lg leading-relaxed text-ink-muted">
-                Ask for a number and you get the number, computed on the server
-                from the candles you can see. Ask what happens next and you get
-                a refusal.
-              </p>
               <div className="mt-5 max-w-lg space-y-3">
                 <p className="question-bubble">
                   What’s the visible high and low?
@@ -128,21 +124,15 @@ export default function LandingPage() {
                 <span className="fact-chip refusal-chip">
                   Recommendations · refused
                 </span>
-                <p className="text-micro text-ink-faint">
-                  Illustrative conversation
-                </p>
               </div>
             </div>
             <div id="faq">
               <h2 className="mb-5 text-title font-semibold">Questions</h2>
               <div className="space-y-3">
                 {questions.map(([q, a]) => (
-                  <details key={q} className="faq-item">
-                    <summary>{q}</summary>
-                    <p className="mt-3 text-tiny leading-relaxed text-ink-muted">
-                      {a}
-                    </p>
-                  </details>
+                  <FaqItem key={q} question={q}>
+                    {a}
+                  </FaqItem>
                 ))}
               </div>
             </div>

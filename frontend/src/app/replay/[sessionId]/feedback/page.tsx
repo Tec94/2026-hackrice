@@ -102,11 +102,7 @@ export default function AnalysisFeedbackPage({
       />
       <main className="feedback-layout">
         <section className="feedback-chart" aria-label="Chart as submitted">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-tiny text-ink-muted">
-              Chart as submitted · snapshot r{snapshot?.revision ?? "…"} ·{" "}
-              {snapshot?.timeframe}
-            </p>
+          <div className="flex items-center justify-end gap-3">
             <Link
               className="button-ghost rounded-lg px-3 py-3 text-tiny"
               href={`/replay/${sessionId}`}
@@ -160,10 +156,6 @@ export default function AnalysisFeedbackPage({
           <header className="bay-header">
             <div>
               <h1 className="font-semibold">Evidence check</h1>
-              <p className="mt-1 text-tiny text-ink-muted">
-                Recomputed from snapshot r{snapshot?.revision ?? "…"} ·
-                uncalibrated rubric, no overall score
-              </p>
             </div>
           </header>
           <div className="bay-scroll space-y-5">
@@ -248,10 +240,6 @@ export default function AnalysisFeedbackPage({
                     ))}
                   </div>
                 )}
-                <p className="mt-3 text-micro leading-relaxed text-ink-faint">
-                  Structured records only: rubric categories and reason codes
-                  from past sessions. No prices, dates, or transcripts.
-                </p>
               </section>
             )}
           </div>
@@ -290,13 +278,13 @@ export default function AnalysisFeedbackPage({
                 </div>
                 {receipt.status !== "confirmed" && (
                   <>
-                    <p className="text-tiny text-ink-muted">
-                      {receipt.status === "unavailable"
-                        ? "Your analysis is saved. Reveal stays locked while devnet receipts are unavailable."
-                        : receipt.status === "failed"
+                    {receipt.status !== "unavailable" && (
+                      <p className="text-tiny text-ink-muted">
+                        {receipt.status === "failed"
                           ? "Devnet did not confirm the transaction. Your saved commitment cannot change."
                           : "Reveal is locked until the receipt is confirmed."}
-                    </p>
+                      </p>
+                    )}
                     <Button
                       className="w-full text-tiny"
                       disabled={busy}

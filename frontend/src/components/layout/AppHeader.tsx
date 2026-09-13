@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Archive,
   Check,
@@ -16,6 +16,7 @@ import { getSession, signOut, type AuthUser } from "@/services/auth-client";
 import { Presence } from "@/components/ui/Presence";
 import { Button } from "@/components/ui";
 import { Logo } from "@/components/brand/Logo";
+import { SlidingHighlight } from "@/components/ui/SlidingHighlight";
 
 export function Brand() {
   return (
@@ -34,22 +35,36 @@ export function SessionTrack({
   revealReady?: boolean;
 }) {
   const current = states.indexOf(status);
+  const pathname = usePathname();
+  const transitionKey = pathname.match(/^\/replay\/[^/]+/)?.[0];
   return (
     <nav aria-label="Session progress" className="header-progress">
-      <ol className="state-track">
-        {states.map((state, index) => (
-          <li key={state} aria-current={current === index ? "step" : undefined}>
-            {index < current ? (
-              <Check size={11} className="text-bull" />
-            ) : index === current ? (
-              <span className="state-dot" />
-            ) : state === "revealed" && !revealReady ? (
-              <LockKeyhole size={10} aria-label="Reveal locked" />
-            ) : null}
-            {state[0].toUpperCase() + state.slice(1)}
-          </li>
-        ))}
-      </ol>
+      <div className="state-track sliding-track">
+        <SlidingHighlight
+          index={current}
+          count={states.length}
+          transitionKey={transitionKey}
+        />
+        <ol>
+          {states.map((state, index) => (
+            <li
+              key={state}
+              aria-current={current === index ? "step" : undefined}
+            >
+              <span className="state-icon">
+                {index < current ? (
+                  <Check size={11} className="text-bull" />
+                ) : index === current ? (
+                  <span className="state-dot" />
+                ) : state === "revealed" && !revealReady ? (
+                  <LockKeyhole size={10} aria-label="Reveal locked" />
+                ) : null}
+              </span>
+              {state[0].toUpperCase() + state.slice(1)}
+            </li>
+          ))}
+        </ol>
+      </div>
     </nav>
   );
 }

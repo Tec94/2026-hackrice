@@ -7,6 +7,15 @@ import { EmptyState, ErrorBanner, Skeleton } from "@/components/ui";
 import { SessionHistoryCard } from "@/components/history/SessionHistoryCard";
 import type { Session } from "@hackrice/contracts";
 import { request, isApiError } from "@/services/api-client";
+import { Archive, History as HistoryIcon } from "lucide-react";
+import { SlidingHighlight } from "@/components/ui/SlidingHighlight";
+import { NewReplayIcon } from "@/components/ui/NewReplayIcon";
+
+const filters = [
+  ["all", "All"],
+  ["progress", "In progress"],
+  ["completed", "Completed"],
+];
 export default function HistoryPage() {
   return (
     <Suspense fallback={<p role="status">Loading your record…</p>}>
@@ -59,13 +68,17 @@ function SessionHistoryPage() {
               {archived ? " · restore at any time before expiry" : ""}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="segmented" aria-label="Filter sessions">
-              {[
-                ["all", "All"],
-                ["progress", "In progress"],
-                ["completed", "Completed"],
-              ].map(([id, label]) => (
+          <div className="record-controls">
+            <div
+              className="segmented session-filters sliding-track"
+              role="group"
+              aria-label="Filter sessions"
+            >
+              <SlidingHighlight
+                index={filters.findIndex(([id]) => id === filter)}
+                count={filters.length}
+              />
+              {filters.map(([id, label]) => (
                 <button
                   key={id}
                   aria-pressed={filter === id}
@@ -75,18 +88,28 @@ function SessionHistoryPage() {
                 </button>
               ))}
             </div>
-            <Link
-              href={archived ? "/history" : "/history?view=archived"}
-              className="text-tiny text-ink-muted"
-            >
-              {archived ? "Your record" : "Archived"}
-            </Link>
-            <Link
-              href="/start"
-              className="button-primary motion-control inline-flex min-h-touch items-center rounded-xl px-4 text-tiny"
-            >
-              New replay
-            </Link>
+            <div className="record-page-actions">
+              <Link
+                href={archived ? "/history" : "/history?view=archived"}
+                className="record-icon-action control-surface motion-control text-ink-muted"
+                aria-label={archived ? "Your record" : "Archived sessions"}
+                title={archived ? "Your record" : "Archived sessions"}
+              >
+                {archived ? (
+                  <HistoryIcon size={18} aria-hidden="true" />
+                ) : (
+                  <Archive size={18} aria-hidden="true" />
+                )}
+              </Link>
+              <Link
+                href="/start"
+                className="record-icon-action button-primary motion-control"
+                aria-label="New replay"
+                title="New replay"
+              >
+                <NewReplayIcon />
+              </Link>
+            </div>
           </div>
         </div>
         {error && (

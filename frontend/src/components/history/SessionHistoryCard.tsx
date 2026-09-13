@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Session, History, Receipt } from "@hackrice/contracts";
 import type { z } from "zod";
-import { Badge, Button } from "@/components/ui";
+import { Badge } from "@/components/ui";
+import { Archive, ArchiveRestore, Check, LoaderCircle } from "lucide-react";
 import { request } from "@/services/api-client";
 export function SessionHistoryCard({
   session,
@@ -93,8 +94,15 @@ export function SessionHistoryCard({
             </Badge>
           </span>
           <button
-            className={`archive-button control-surface min-h-touch rounded-lg px-3 text-tiny ${confirm ? "text-replay-300" : ""}`}
+            className={`archive-button ${confirm ? "text-accent-300" : "text-ink-muted"}`}
             aria-label={
+              session.archived
+                ? "Restore session"
+                : confirm
+                  ? "Confirm archive"
+                  : "Archive session"
+            }
+            title={
               session.archived
                 ? "Restore session"
                 : confirm
@@ -104,13 +112,19 @@ export function SessionHistoryCard({
             disabled={busy}
             onClick={() => void archive()}
           >
-            {busy
-              ? "Saving…"
-              : session.archived
-                ? "Restore"
-                : confirm
-                  ? "Archive?"
-                  : "Archive"}
+            {busy ? (
+              <LoaderCircle
+                size={16}
+                className="animate-spin"
+                aria-hidden="true"
+              />
+            ) : session.archived ? (
+              <ArchiveRestore size={16} aria-hidden="true" />
+            ) : confirm ? (
+              <Check size={16} aria-hidden="true" />
+            ) : (
+              <Archive size={16} aria-hidden="true" />
+            )}
           </button>
         </div>
       </div>
@@ -155,7 +169,7 @@ export function SessionHistoryCard({
         </div>
       </dl>
       <Link
-        className="mt-6 flex min-h-touch items-center justify-between border-t border-line/50 pt-4 text-tiny text-ink-muted hover:text-ink"
+        className="record-link mt-6 flex min-h-touch items-center justify-between border-t border-line/50 pt-4 text-tiny text-ink-muted hover:text-ink"
         href={destination}
       >
         {session.status === "exploring"
