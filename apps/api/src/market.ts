@@ -219,7 +219,7 @@ export function indicatorSeries(candles: readonly MarketCandle[], spec: Indicato
 }
 
 type Intent = { kind: "metric"; metric: MetricName; period?: number; drawingId?: string; barsBack?: number; minutesBack?: number }
-  | { kind: "metrics"; metrics: MetricName[] }
+  | { kind: "metrics"; metrics: MetricName[]; barsBack?: number; minutesBack?: number }
   | { kind: "concept"; concept: "ema" | "rsi" | "relative_volume" | "invalidation" }
   | { kind: "refusal"; reason: "advice" | "future" | "news" | "unsupported" };
 
@@ -362,6 +362,7 @@ export function parseQuestionIntent(text: string): Intent {
     .replace(/ (?:right )?(?:here|on screen|on the screen)$/, " visible")
     .replace(/(?<!\b(?:candles?|bars?|minutes?|mins?|hours?|days?|weeks?)) (?:just )?(?:before|up to|until|prior to) (?:the )?cut-? ?off$/, "")
     .replace(/^what should (?:the )?(.+?) be$/, "what is the $1")
+    .replace(/^what (?:does|did) (?:the |this )?(.+?) look like\b/, "what is the $1 look like")
     .replace(/^how volatile (?:was|is) (?:it|the price|this)\b/, "what is the volatility")
     .replace(/\s+/g, " ").trim();
   if (/\b(news|headline|date|year)\b/.test(question)) return { kind: "refusal", reason: "news" };
@@ -427,8 +428,18 @@ export function parseQuestionIntent(text: string): Intent {
     "volatility": ["visible_high", "visible_low"],
     "volatile": ["visible_high", "visible_low"],
     "how volatile it was": ["visible_high", "visible_low"],
+    // A candle is its four values, so asking what one looks like is asking
+    // for all four. Nothing new is computed; this is four existing metrics.
+    "candle": ["open", "high", "low", "close"],
+    "bar": ["open", "high", "low", "close"],
+    "candle look like": ["open", "high", "low", "close"],
+    "bar look like": ["open", "high", "low", "close"],
+    "candle looks like": ["open", "high", "low", "close"],
+    "ohlc": ["open", "high", "low", "close"],
+    "open high low and close": ["open", "high", "low", "close"],
+    "open high low close": ["open", "high", "low", "close"],
   };
-  if (pairs[expression]) return { kind: "metrics", metrics: pairs[expression]! };
+  if (pairs[expression]) return { kind: "metrics", metrics: pairs[expression]!, ...back };
   // Spoken synonyms only. Every value is an existing Metric member, so widening
   // the wording adds no arithmetic and no new data reaches the reply.
   const metrics: Record<string, MetricName> = {
@@ -543,7 +554,11 @@ export function answerQuestion(input: CalculationInput & { text: string }): Repl
   if (intent.kind === "metrics") {
     // Every half must compute, so a partial pair refuses rather than quietly
     // answering only the side that happened to succeed.
-    const facts = intent.metrics.map((metric) => calculateIntent({ kind: "metric", metric }, input));
+    const facts = intent.metrics.map((metric) => calculateIntent({
+      kind: "metric", metric,
+      ...(intent.barsBack !== undefined ? { barsBack: intent.barsBack } : {}),
+      ...(intent.minutesBack !== undefined ? { minutesBack: intent.minutesBack } : {}),
+    }, input));
     return SafeReply.parse(facts.every((fact) => fact !== null)
       ? { kind: "calculation", facts }
       : { kind: "refusal", reason: "insufficient_data" });

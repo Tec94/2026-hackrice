@@ -449,3 +449,40 @@ test("a lookback counted in spoken words is read like one in digits", () => {
   assert.equal(parseQuestionIntent("what is the open six hundred candles ago").kind, "refusal");
   assert.equal(parseQuestionIntent("what is the open thirty six hours after cutoff").kind, "refusal");
 });
+
+test("asking what a candle looks like answers with its four values", () => {
+  for (const text of [
+    "what is the candle",
+    "what does the candle look like",
+    "what is the ohlc",
+  ]) {
+    const intent = parseQuestionIntent(text);
+    assert.equal(intent.kind, "metrics", text);
+    assert.deepEqual(intent.metrics, ["open", "high", "low", "close"], text);
+  }
+
+  // The same question about an earlier candle keeps the lookback.
+  const past = parseQuestionIntent("what does the candle look like thirty six hours before cutoff");
+  assert.deepEqual(past.metrics, ["open", "high", "low", "close"]);
+  assert.equal(past.minutesBack, 36 * 60);
+
+  // A lookback on any multi-value question must reach the calculation, or it
+  // answers about the current candle while looking like it answered the past.
+  const pair = parseQuestionIntent("what is the high and low 3 candles ago");
+  assert.equal(pair.barsBack, 3, "the lookback survives on a pair, not just a single metric");
+  const now = calculation("What is the high and low?");
+  const back = calculation("What was the high and low 3 candles ago?");
+  assert.equal(now.kind, "calculation");
+  assert.equal(back.kind, "calculation");
+  assert.notDeepEqual(back.facts.map((f) => f.value), now.facts.map((f) => f.value));
+  assert.ok(back.facts.every((f) => f.calculatedThroughOffsetMinutes <= 0));
+
+  // Nothing here may reach forward.
+  for (const text of [
+    "what does the next candle look like",
+    "what will the candle look like",
+    "what does the candle look like after the cutoff",
+  ]) {
+    assert.equal(parseQuestionIntent(text).kind, "refusal", text);
+  }
+});
