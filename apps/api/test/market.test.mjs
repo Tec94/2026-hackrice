@@ -364,3 +364,26 @@ test("the reveal rates the thesis, the choices and the confidence against the ou
   // The blind judgement of the writing survives the outcome.
   assert.equal(by.structure.score, 80, "a poor outcome does not rewrite the reasoning score");
 });
+
+test("a question can name a candle before the cutoff", () => {
+  const now = calculation("What is the closing price?");
+  assert.equal(now.kind, "calculation");
+  const latest = now.facts[0].value;
+
+  // Counting back lands on an earlier bar, whose close differs by construction.
+  const back = calculation("What was the closing price 3 candles before the cutoff?");
+  assert.equal(back.kind, "calculation", "a lookback is a supported question");
+  assert.notEqual(back.value, latest);
+  assert.ok(back.facts[0].calculatedThroughOffsetMinutes < now.facts[0].calculatedThroughOffsetMinutes,
+    "the fact is stamped to the earlier candle it came from");
+
+  // The same candle reached by duration rather than by bar count.
+  const byTime = calculation("What was the closing price 15 minutes before the cutoff?");
+  assert.equal(byTime.kind, "calculation");
+  assert.equal(byTime.facts[0].value, back.facts[0].value, "15 minutes is 3 five-minute bars");
+
+  // Nothing may reach past the cutoff, and a lookback off the chart refuses.
+  assert.ok(back.facts.every((fact) => fact.calculatedThroughOffsetMinutes <= 0));
+  assert.equal(calculation("What was the close 500 candles before the cutoff?").kind, "refusal");
+  assert.equal(calculation("What is the close 3 candles after the cutoff?").kind, "refusal");
+});

@@ -218,7 +218,7 @@ export function indicatorSeries(candles: readonly MarketCandle[], spec: Indicato
   });
 }
 
-type Intent = { kind: "metric"; metric: MetricName; period?: number; drawingId?: string }
+type Intent = { kind: "metric"; metric: MetricName; period?: number; drawingId?: string; barsBack?: number; minutesBack?: number }
   | { kind: "metrics"; metrics: MetricName[] }
   | { kind: "concept"; concept: "ema" | "rsi" | "relative_volume" | "invalidation" }
   | { kind: "refusal"; reason: "advice" | "future" | "news" | "unsupported" };
@@ -257,6 +257,40 @@ export function correctHearing(question: string): string {
   return corrected.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Strips a trailing "N candles before the cutoff" or "2 hours ago" from a
+ * question and reports how far back it points.
+ *
+ * Durations are returned in minutes and converted to bars later, once the
+ * chart's timeframe is known. Everything here is relative to the cutoff, so
+ * no phrasing can reach a candle the learner is not allowed to see.
+ */
+function parseLookback(expression: string): { rest: string; barsBack?: number; minutesBack?: number } {
+  const words: Record<string, number> = {
+    a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
+    seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  };
+  const count = (raw: string) => {
+    const value = /^\d+$/.test(raw) ? Number(raw) : words[raw];
+    return Number.isSafeInteger(value) && value! > 0 && value! <= 500 ? value : undefined;
+  };
+  // "... 3 candles before the cutoff" / "... 3 bars back" / "... 3 candles ago"
+  const bars = /^(.*?)\s+(\d+|[a-z]+)\s+(?:candles?|bars?)\s+(?:before\s+(?:the\s+)?cut-?\s?off|back|ago|earlier|prior)$/.exec(expression);
+  if (bars) {
+    const value = count(bars[2]!);
+    if (value !== undefined) return { rest: bars[1]!.trim(), barsBack: value };
+  }
+  // "... 2 hours before the cutoff" / "... 30 minutes ago"
+  const units: Record<string, number> = { minute: 1, min: 1, hour: 60, day: 1440, week: 10080 };
+  const time = /^(.*?)\s+(?:(\d+|[a-z]+)\s+)?(minutes?|mins?|hours?|days?|weeks?)\s+(?:before\s+(?:the\s+)?cut-?\s?off|back|ago|earlier|prior)$/.exec(expression);
+  if (time) {
+    const value = time[2] === undefined ? 1 : count(time[2]);
+    const unit = units[time[3]!.replace(/s$/, "")];
+    if (value !== undefined && unit) return { rest: time[1]!.trim(), minutesBack: value * unit };
+  }
+  return { rest: expression };
+}
+
 export function parseQuestionIntent(text: string): Intent {
   // Speech arrives contracted and conversational. Normalising here, before any
   // matching, keeps the concept and expression paths below working from one
@@ -289,7 +323,9 @@ export function parseQuestionIntent(text: string): Intent {
   };
   const concept = /^(?:what is|explain|define) (?:the |an? )?(.+)$/.exec(corrected);
   if (concept && concepts[concept[1]!]) return { kind: "concept", concept: concepts[concept[1]!]! };
-  const expression = corrected.replace(/^(?:(?:what is|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
+  // "what was" belongs here too: a question about an earlier candle is
+  // naturally asked in the past tense.
+  const expression = corrected.replace(/^(?:(?:what is|what was|what were|calculate|show me|give me|tell me|read me|show) )(?:the )?/, "")
     .replace(/^(?:the |a |an )/, "").replace(/^current /, "")
     .replace(/ (?:for |of )?(?:the )?(?:selected|latest) (?:candle|bar)$/, "").replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
   const indicator = /^(ema|exponential moving average|rsi|relative strength index|relative volume)(?: over| period)? (\d+)(?: bars| periods)?$/.exec(expression);
@@ -339,6 +375,17 @@ export function parseQuestionIntent(text: string): Intent {
     "lowest price visible": "visible_low", "low of the visible range": "visible_low",
   };
   if (metrics[expression]) return { kind: "metric", metric: metrics[expression]! };
+  // A question may name a past candle. The wording is stripped here and the
+  // metric matched on what is left, so every phrasing above works with a
+  // lookback too. Minutes become bars later, once the timeframe is known.
+  const lookback = parseLookback(expression);
+  if ((lookback.barsBack !== undefined || lookback.minutesBack !== undefined) && metrics[lookback.rest]) {
+    return {
+      kind: "metric", metric: metrics[lookback.rest]!,
+      ...(lookback.barsBack !== undefined ? { barsBack: lookback.barsBack } : {}),
+      ...(lookback.minutesBack !== undefined ? { minutesBack: lookback.minutesBack } : {}),
+    };
+  }
   const drawing = /^distance to drawing ([0-9a-f-]+)$/.exec(expression);
   if (drawing) return { kind: "metric", metric: "distance_to_drawing", drawingId: drawing[1]! };
   return { kind: "refusal", reason: "unsupported" };
@@ -359,9 +406,22 @@ function calculateIntent(intent: Extract<Intent, { kind: "metric" }>, input: Cal
   const all = aggregateCandles(input.candles, snapshot.timeframe, input.cutoffTimeMs);
   const visible = all.filter((bar) => (bar.openTimeMs - input.cutoffTimeMs) / MINUTE_MS >= snapshot.visibleRange.from
     && (bar.closeTimeMs - input.cutoffTimeMs) / MINUTE_MS <= snapshot.visibleRange.to);
-  const selected = snapshot.selectedCandleOffsetMinutes === undefined ? visible.at(-1)
+  const current = snapshot.selectedCandleOffsetMinutes === undefined ? visible.at(-1)
     : visible.find((bar) => (bar.openTimeMs - input.cutoffTimeMs) / MINUTE_MS === snapshot.selectedCandleOffsetMinutes);
-  if (!selected) return null;
+  if (!current) return null;
+  // A question may ask about an earlier candle. Counting back from the one in
+  // hand keeps every answer inside the bars already on screen, so no wording
+  // can reach past the cutoff. A lookback beyond the chart refuses rather than
+  // silently answering about the oldest bar there is.
+  const step = snapshot.timeframe ? timeframeMinutes[snapshot.timeframe] : undefined;
+  const back = intent.barsBack ?? (intent.minutesBack !== undefined && step ? Math.round(intent.minutesBack / step) : undefined);
+  let selected = current;
+  if (back !== undefined) {
+    if (back < 1) return null;
+    const index = visible.indexOf(current) - back;
+    if (index < 0) return null;
+    selected = visible[index]!;
+  }
   const D = arithmetic(input.decimalPolicy);
   let value: string | null = null;
   let unit: ComputedFact["unit"] = "USDT";
