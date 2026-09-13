@@ -17,7 +17,8 @@
     "dev": "npm run build && node --env-file-if-exists=.env apps/api/dist/main.js",
     "db:migrate": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js migrate",
     "data:import": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js import",
-    "jobs:run": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js jobs"
+    "jobs:run": "npm run build && node --env-file-if-exists=.env apps/api/dist/cli.js jobs",
+    "demo:brief": "npm run build && node scripts/demo-brief.mjs"
   },
   "dependencies": {
     "@better-auth/infra": "^0.4.9"
