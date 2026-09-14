@@ -52,10 +52,11 @@ remain server-side; do not commit `.env` or a Solana keypair file.
 | `DATABASE_MODE` | `local` or `tigerdata`; omission uses the hosted path. |
 | `DATABASE_URL` | Required for TigerData; ordinary PostgreSQL connection URL passed to `pg`. |
 | `LOCAL_DATABASE_PATH` | PGlite directory; defaults to `.data/postgres`. |
-| `APP_URL` | Required public origin; HTTPS is required outside local mode. |
+| `APP_URL` | Public origin; falls back to `RENDER_EXTERNAL_URL` on Render. HTTPS is required except on loopback. |
 | `BETTER_AUTH_SECRET` | Required outside local mode; Better Auth requires at least 32 characters. A blank local value creates an ephemeral secret, invalidating cookies on restart. |
 | `HOST`, `PORT` | Listen address; host defaults to `127.0.0.1`, port derives from `APP_URL` unless supplied. |
-| `RECORDINGS_PATH` | Private PCM directory; defaults to `.data/recordings`. Use persistent storage, never a public static directory. |
+| `RECORDINGS_STORAGE` | `filesystem` (default) or `database`. Render uses `database` to persist audio frames in PostgreSQL across restarts. |
+| `RECORDINGS_PATH` | Private PCM directory for filesystem mode; defaults to `.data/recordings`. Use persistent storage, never a public static directory. |
 | `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `DEEPGRAM_THINK_URL` | Supply all together or leave all blank. The Think URL must be public HTTPS pointing to this API's `/internal/think`. |
 | `VOICE_PLAYBACK_VALIDATED` | Only the exact value `true` enables configured voice. Keep false until credentialed tests establish the controlled speech path. |
 | `BACKBOARD_API_KEY` | Optional learning-memory integration. |
@@ -67,8 +68,8 @@ the candle table into a hypertable. The database role must permit those
 operations. The connection uses the supplied PostgreSQL URL, including its TLS
 configuration; the application does not replace it with an insecure fallback.
 
-Run one API process with persistent WebSocket support and a private persistent
-recording volume. Provider-work serialization is in-process, not a distributed
+Run one API process with persistent WebSocket support and either database
+recording storage or a private persistent volume. Provider-work serialization is in-process, not a distributed
 worker lock. Do not run a concurrent CLI job worker against the same application
 state. Deployment and live TigerData access have not been verified by the local
 integration test.

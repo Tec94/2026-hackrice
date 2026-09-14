@@ -1,8 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Brand } from "@/components/layout/AppHeader";
 import { ChartIllustration } from "@/components/landing/ChartIllustration";
 import { Button, ErrorBanner, Input } from "@/components/ui";
@@ -94,7 +93,16 @@ function SignInForm() {
           Your replay is waiting. We’ll bring you straight back to it.
         </p>
 
-        <div className="segmented mt-6">
+        <div
+          className="segmented sliding-track auth-tabs mt-6"
+          style={
+            {
+              "--track-count": 2,
+              "--active-index": mode === "sign-up" ? 0 : 1,
+            } as CSSProperties
+          }
+        >
+          <span className="sliding-highlight" aria-hidden="true" />
           {(["sign-up", "sign-in"] as const).map((value) => (
             <button
               key={value}
@@ -109,83 +117,99 @@ function SignInForm() {
             </button>
           ))}
         </div>
-        <form onSubmit={submit} className="mt-7 space-y-3">
-          {mode === "sign-up" && (
-            <div>
-              <label
-                htmlFor="name"
-                className="mb-1.5 block text-base font-medium text-ink"
+        <div className="auth-panels mt-7">
+          {(["sign-up", "sign-in"] as const).map((panelMode) => (
+            <form
+              key={panelMode}
+              onSubmit={submit}
+              className="auth-panel space-y-3"
+              data-active={mode === panelMode}
+              data-mode={panelMode}
+              inert={mode !== panelMode}
+              aria-hidden={mode !== panelMode}
+            >
+              {panelMode === "sign-up" && (
+                <div>
+                  <label
+                    htmlFor={`${panelMode}-name`}
+                    className="mb-1.5 block text-base font-medium text-ink"
+                  >
+                    Name
+                  </label>
+                  <Input
+                    id={`${panelMode}-name`}
+                    value={name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setName(e.target.value)
+                    }
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+              )}
+
+              <div>
+                <label
+                  htmlFor={`${panelMode}-email`}
+                  className="mb-1.5 block text-base font-medium text-ink"
+                >
+                  Email
+                </label>
+                <Input
+                  id={`${panelMode}-email`}
+                  type="email"
+                  value={email}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setEmail(e.target.value)
+                  }
+                  autoComplete="email"
+                  required
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor={`${panelMode}-password`}
+                  className="mb-1.5 block text-base font-medium text-ink"
+                >
+                  Password
+                </label>
+                <Input
+                  id={`${panelMode}-password`}
+                  type="password"
+                  value={password}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setPassword(e.target.value)
+                  }
+                  autoComplete={
+                    panelMode === "sign-in"
+                      ? "current-password"
+                      : "new-password"
+                  }
+                  minLength={8}
+                  required
+                />
+              </div>
+
+              {error && (
+                <ErrorBanner title="Could not continue" message={error} />
+              )}
+
+              <Button
+                type="submit"
+                variant="primary"
+                className="w-full"
+                disabled={busy}
               >
-                Name
-              </label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setName(e.target.value)
-                }
-                autoComplete="name"
-                required
-              />
-            </div>
-          )}
-
-          <div>
-            <label
-              htmlFor="email"
-              className="mb-1.5 block text-base font-medium text-ink"
-            >
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setEmail(e.target.value)
-              }
-              autoComplete="email"
-              required
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="password"
-              className="mb-1.5 block text-base font-medium text-ink"
-            >
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setPassword(e.target.value)
-              }
-              autoComplete={
-                mode === "sign-in" ? "current-password" : "new-password"
-              }
-              minLength={8}
-              required
-            />
-          </div>
-
-          {error && <ErrorBanner title="Could not continue" message={error} />}
-
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-full"
-            disabled={busy}
-          >
-            {busy
-              ? "Working…"
-              : mode === "sign-in"
-                ? "Sign in"
-                : "Create account and continue"}
-          </Button>
-        </form>
+                {busy
+                  ? "Working…"
+                  : panelMode === "sign-in"
+                    ? "Sign in"
+                    : "Create account and continue"}
+              </Button>
+            </form>
+          ))}
+        </div>
 
         <p className="mt-5 text-base text-ink-muted">
           {mode === "sign-in" ? "No account yet?" : "Already have an account?"}{" "}
@@ -199,10 +223,6 @@ function SignInForm() {
             {mode === "sign-in" ? "Create one" : "Sign in"}
           </button>
         </p>
-        <p className="mt-6 text-tiny leading-relaxed text-ink-faint">
-          Sessions expire 30 days after creation. Voice recordings, if enabled,
-          follow the same clock.
-        </p>
       </div>
       <section className="w-full">
         <h2 className="text-title font-semibold">How a replay works</h2>
@@ -211,11 +231,6 @@ function SignInForm() {
           hidden horizon.
         </p>
         <ChartIllustration />
-        <p className="mt-6 text-tiny leading-relaxed text-ink-muted">
-          The cutoff is random and server-chosen. Your analysis is committed
-          before the hidden candles are available. A confirmed Solana devnet
-          receipt unlocks the reveal.
-        </p>
       </section>
     </main>
   );

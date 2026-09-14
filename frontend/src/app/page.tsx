@@ -96,9 +96,6 @@ export default function LandingPage() {
         <section id="markets" className="page-shell section-space scroll-mt-4">
           <div className="mb-5 flex flex-wrap items-baseline gap-3">
             <h2 className="text-title font-semibold">Pick a market</h2>
-            <p className="text-tiny text-ink-muted">
-              Each replay is a fresh 15-minute chart with a one-hour horizon
-            </p>
           </div>
           <MarketPicker />
         </section>

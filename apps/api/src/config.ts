@@ -8,7 +8,8 @@ import type { SolanaReceiptConfig } from "./providers/solana.js";
 export async function config(env: NodeJS.ProcessEnv = process.env) {
   const local = env.DATABASE_MODE === "local";
   if (env.DATABASE_MODE && !["local", "tigerdata"].includes(env.DATABASE_MODE)) throw new Error("DATABASE_MODE must be local or tigerdata.");
-  const baseURL = z.url().parse(env.APP_URL);
+  const baseURL = z.url().parse(env.APP_URL || env.RENDER_EXTERNAL_URL);
+  const recordingsStorage = z.enum(["filesystem", "database"]).parse(env.RECORDINGS_STORAGE || "filesystem");
   const appURL = new URL(baseURL);
   const loopbackHTTP = appURL.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(appURL.hostname);
   if (appURL.protocol !== "https:" && !loopbackHTTP) throw new Error("APP_URL must use HTTPS except on loopback for local testing.");
@@ -47,7 +48,7 @@ export async function config(env: NodeJS.ProcessEnv = process.env) {
 
   return {
     local, demoCutoffTimeMs, databaseURL: env.DATABASE_URL, allowUnverifiedTLS: env.DATABASE_ALLOW_UNVERIFIED_TLS === "true", localPath: resolve(env.LOCAL_DATABASE_PATH ?? ".data/postgres"),
-    recordingsDirectory: resolve(env.RECORDINGS_PATH ?? ".data/recordings"), baseURL, authSecret, voice, solana,
+    recordingsDirectory: resolve(env.RECORDINGS_PATH ?? ".data/recordings"), recordingsStorage, baseURL, authSecret, voice, solana,
     backboardApiKey: env.BACKBOARD_API_KEY,
     port: z.coerce.number().int().min(0).max(65535).parse(env.PORT ?? (new URL(baseURL).port || (new URL(baseURL).protocol === "https:" ? 443 : 80))),
     host: env.HOST ?? "127.0.0.1",

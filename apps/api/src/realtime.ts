@@ -7,7 +7,7 @@ import { createVoiceProvider, type TurnContext, type VoiceBinding, type VoiceCon
 import { applyRating, describeChart } from "./market.js";
 import { ReplayService } from "./service.js";
 import { appendEvent, ApiFailure, RETENTION_MS } from "./domain.js";
-import { Recordings } from "./recordings.js";
+import type { RecordingStore } from "./recordings.js";
 
 type Live = { binding: VoiceBinding; socket: WebSocket; relay?: VoiceRelay; recordingId: string; active: boolean; sentAudio: boolean };
 export class Realtime {
@@ -16,7 +16,7 @@ export class Realtime {
   private active = new Map<string, Live>();
   private clients = new Map<WebSocket, { userId: string; sessionId: string; sequence: number; commandErrors: Set<string>; playbackTurns: Set<string> }>();
   private queues = new Map<string, Promise<void>>();
-  constructor(public service: ReplayService, private recordings: Recordings, public format: z.infer<typeof C.AudioFormat>, config?: VoiceConfig) {
+  constructor(public service: ReplayService, private recordings: RecordingStore, public format: z.infer<typeof C.AudioFormat>, config?: VoiceConfig) {
     this.provider = createVoiceProvider({ config,
       answer: (b, text) => service.calculate(b.userId, b.sessionId, b.chartSnapshotId, text),
       context: (b) => this.turnContext(b),

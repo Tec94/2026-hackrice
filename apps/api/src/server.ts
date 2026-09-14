@@ -6,7 +6,7 @@ import type { Database } from "./database.js";
 import { createAuth } from "./auth.js";
 import { Store } from "./store.js";
 import { ReplayService } from "./service.js";
-import { Recordings } from "./recordings.js";
+import { Recordings, type RecordingStore } from "./recordings.js";
 import { Realtime } from "./realtime.js";
 import { Jobs } from "./jobs.js";
 import { ApiFailure, fail, type State } from "./domain.js";
@@ -15,7 +15,7 @@ import type { SolanaReceiptProvider } from "./providers/solana.js";
 import type { createBackboardProvider } from "./providers/backboard.js";
 import type { AnalysisRater } from "./providers/rater.js";
 
-export type AppOptions = { db: Database; service?: ReplayService; recordingsDirectory: string; baseURL: string;
+export type AppOptions = { db: Database; service?: ReplayService; recordingsDirectory: string; recordings?: RecordingStore; baseURL: string;
   authSecret: string; voiceConfig?: VoiceConfig; solanaProvider?: SolanaReceiptProvider; demoCutoffTimeMs?: number;
   backboardProvider?: ReturnType<typeof createBackboardProvider>; rater?: AnalysisRater; now?: () => number };
 
@@ -36,7 +36,7 @@ export async function buildApp(options: AppOptions) {
   const app = Fastify({ logger: false, genReqId: () => randomUUID() });
   const service = options.service ?? new ReplayService(new Store(options.db, options.now), options.demoCutoffTimeMs);
   const auth = createAuth(options.db, options.baseURL, options.authSecret);
-  const recordings = new Recordings(options.recordingsDirectory);
+  const recordings = options.recordings ?? new Recordings(options.recordingsDirectory);
   // 16kHz linear PCM is Deepgram's documented default sample rate, explicitly negotiated in each session.
   const realtime = new Realtime(service, recordings, { encoding: "pcm_s16le", sampleRateHz: 16000, channels: 1 }, options.voiceConfig);
   const jobs = new Jobs(service, recordings, options.solanaProvider, options.backboardProvider, (id) => realtime.cancelSession(id), options.rater);

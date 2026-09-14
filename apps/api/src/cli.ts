@@ -5,7 +5,7 @@ import { connectDatabase, migrate } from "./database.js";
 import { ReplayService } from "./service.js";
 import { Store } from "./store.js";
 import { Jobs } from "./jobs.js";
-import { Recordings } from "./recordings.js";
+import { Recordings, DatabaseRecordings } from "./recordings.js";
 import { fetchBinanceCandles } from "./market.js";
 import { createSolanaReceiptProvider } from "./providers/solana.js";
 import { createBackboardProvider } from "./providers/backboard.js";
@@ -24,7 +24,7 @@ try {
     await store.importDataset(dataset);
     console.log(`Imported ${dataset.candles.length} verified SOLUSDT 5m candles; digest ${dataset.digest}.`);
   } else if (process.argv[2] === "jobs") {
-    const recordings = new Recordings(settings.recordingsDirectory);
+    const recordings = settings.recordingsStorage === "database" ? new DatabaseRecordings(db) : new Recordings(settings.recordingsDirectory);
     const jobs = new Jobs(new ReplayService(store), recordings, createSolanaReceiptProvider(settings.solana), createBackboardProvider({ apiKey: settings.backboardApiKey }));
     try { await jobs.run(); console.log("Provider status and retention sweep finished. Pending provider work remains pending."); }
     finally { await jobs.close(); await recordings.close(); }

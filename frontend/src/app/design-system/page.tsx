@@ -28,13 +28,8 @@ export default function DesignSystemPage() {
       <main className="page-shell py-14">
         <p className="eyebrow">FIanal.sim · design and motion system</p>
         <h1 className="mt-5 text-display font-semibold tracking-tight">
-          Same identity, more depth.
+          design system
         </h1>
-        <p className="mt-4 max-w-2xl text-lead leading-relaxed text-ink-muted">
-          A study room with an instrument in it. Lit surfaces establish
-          hierarchy. Motion makes state changes legible; candles, axes,
-          drawings, and prices stay still.
-        </p>
         <section className="mt-12 grid gap-5 md:grid-cols-3">
           {[
             ["surface-hero", "Hero plane", "Chart and primary content"],

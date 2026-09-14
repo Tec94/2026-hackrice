@@ -77,4 +77,9 @@ export async function migrate(db: Database) {
     await db.exec("CREATE EXTENSION IF NOT EXISTS timescaledb");
     await db.query("SELECT create_hypertable('candles','open_time',if_not_exists=>true,migrate_data=>true)");
   }
+  await db.transaction(async (tx) => {
+    if ((await tx.query("SELECT name FROM app_migrations WHERE name=$1", ["recordings-v1"])).rows.length) return;
+    await tx.exec(await readFile(new URL("../migrations/recordings.sql", import.meta.url), "utf8"));
+    await tx.query("INSERT INTO app_migrations(name) VALUES($1)", ["recordings-v1"]);
+  });
 }

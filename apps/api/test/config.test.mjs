@@ -15,3 +15,14 @@ test("unverified database TLS requires explicit opt-in and cannot disable encryp
   await assert.rejects(config({ ...env, APP_URL: "http://example.com" }), /HTTPS/);
   await assert.rejects(config({ ...env, DATABASE_ALLOW_UNVERIFIED_TLS: "yes" }), /true or false/);
 });
+
+test("Render derives the public origin and validates persistent recording storage", async () => {
+  const env = { DATABASE_MODE: "tigerdata", DATABASE_URL: "postgres://example.invalid/db", BETTER_AUTH_SECRET: "a".repeat(32),
+    RENDER_EXTERNAL_URL: "https://chartroom.onrender.com", PORT: "10000", RECORDINGS_STORAGE: "database" };
+  const settings = await config(env);
+  assert.equal(settings.baseURL, env.RENDER_EXTERNAL_URL);
+  assert.equal(settings.port, 10000);
+  assert.equal(settings.recordingsStorage, "database");
+  assert.equal((await config({ ...env, APP_URL: "https://custom.example" })).baseURL, "https://custom.example");
+  await assert.rejects(config({ ...env, RECORDINGS_STORAGE: "temporary" }));
+});

@@ -838,7 +838,7 @@
   .archive-button {
     position: absolute;
     z-index: 2;
-    right: 0;
+    right: -8px;
     display: grid;
     place-items: center;
     width: 44px;
@@ -876,6 +876,36 @@
     align-items: center;
     min-height: calc(100dvh - 64px);
     padding-block: 64px;
+  }
+  .auth-tabs {
+    gap: 0;
+  }
+  .auth-tabs button[aria-pressed="true"] {
+    background: transparent;
+    box-shadow: none;
+  }
+  .auth-panels {
+    display: grid;
+    overflow: clip;
+  }
+  .auth-panel {
+    grid-area: 1 / 1;
+    align-self: start;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(-100%);
+    transition:
+      transform var(--motion-state) var(--ease-settle),
+      opacity var(--motion-state) var(--ease-settle),
+      visibility var(--motion-state);
+  }
+  .auth-panel[data-mode="sign-in"] {
+    transform: translateX(100%);
+  }
+  .auth-panel[data-active="true"] {
+    visibility: visible;
+    opacity: 1;
+    transform: translateX(0);
   }
   .auth-form {
     max-width: 400px;

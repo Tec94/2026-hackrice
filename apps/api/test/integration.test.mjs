@@ -4,6 +4,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { registerFrontend } from "../../../scripts/frontend-proxy.mjs";
 import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import WebSocket from "ws";
 import * as C from "@hackrice/contracts";
@@ -94,8 +97,16 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
   const app = await buildApp({ db, recordingsDirectory: directory, baseURL: origin,
     authSecret: "integration-only-auth-secret-not-for-deployment", now: () => now,
     solanaProvider: mocks.solanaProvider, backboardProvider: mocks.backboardProvider });
+  const frontend = createServer((request, response) => {
+    response.setHeader("Content-Type", "text/html");
+    response.end("<html>Frontend fixture</html>");
+  });
+  frontend.listen(0, "127.0.0.1");
+  await once(frontend, "listening");
+  registerFrontend(app, `http://127.0.0.1:${frontend.address().port}`);
   t.after(async () => {
     await app.close();
+    await new Promise((resolve, reject) => frontend.close((error) => error ? reject(error) : resolve()));
     await fixtures.close();
     await db.close();
     // mkdtemp returns this test's dedicated absolute directory, not a workspace.
@@ -103,6 +114,10 @@ test("authenticated replay lifecycle, receipt gating, and retained-data deletion
   });
   await migrate(db);
   await app.replayService.store.importDataset({ candles, digest, source: "Synthetic integration fixture; not market data" });
+  const homepage = await app.inject({ method: "GET", url: "/" });
+  assert.equal(homepage.statusCode, 200);
+  assert.equal(homepage.body, "<html>Frontend fixture</html>");
+  assert.equal((await app.inject({ method: "GET", url: "/health" })).json().status, "ok");
 
   async function request(cookie, method, url, payload, key = randomUUID()) {
     return app.inject({ method, url, headers: { origin, ...(cookie ? { cookie } : {}),

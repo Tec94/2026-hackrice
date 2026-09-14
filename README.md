@@ -124,10 +124,15 @@ credentialed and manual checks.
 
 ## Configure integrations
 
+For one-service frontend and API hosting, use the root `render.yaml` and follow
+[Render deployment](docs/render-deployment.md). This setup stores recordings in
+the existing PostgreSQL database so they survive free-service restarts.
+
 Start with [`.env.example`](.env.example) and keep secrets out of Git. Deployment
 requires the TigerData connection, a persistent Better Auth secret, same-origin
-HTTPS routing with WebSocket upgrades, and a private persistent recordings
-volume. Run one API process because provider work is coordinated in process.
+HTTPS routing with WebSocket upgrades, and persistent recordings storage
+(PostgreSQL on Render or a private volume). Run one API process because provider
+work is coordinated in process.
 
 Voice, Backboard, and Solana remain optional. Keep
 `VOICE_PLAYBACK_VALIDATED=false` until a credentialed playback test verifies the
