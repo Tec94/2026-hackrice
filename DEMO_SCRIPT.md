@@ -1,182 +1,110 @@
-# FIanal.sim — Demo Video Script
+# Final.sim — Demo voiceover
 
-**Total: 3 minutes 30 seconds.** Word counts assume ~150 words per minute, an
-unhurried pace on camera. Spoken lines are in quotes. Everything else is a
-direction for what to show or do.
+Record the screen first, then read the quoted paragraphs over the footage.
+The screen cues are for editing, not part of the voiceover. Leave room for the
+coach's response to appear before moving on.
 
-Fill in before filming: `[MEMBER NAMES]`, `[TRACK / CHALLENGE]`.
+## Opening
 
----
+**On screen:** Start on the landing page. Show the overall process, the market
+categories, the coaching example, and an FAQ opening and closing. Then return
+to the replay button.
 
-## 1. Intro — 30 seconds (~70 words)
+> People can lose real money trying to learn this live. And if you're just
+> watching someone else trade, you're not getting much practice making your
+> own decisions. That's why we built Final.sim: to give you those reps without
+> putting your money on the line.
 
-**Screen:** the landing page, logo visible.
+## Start a replay
 
-> "This is FIanal.sim, by [MEMBER NAMES], for [TRACK / CHALLENGE].
+**On screen:** Start a new session and let the chart load. Move the cursor toward
+the hidden part of the chart.
+
+> So let's start a replay. For this recording, we're using a fixed chart so
+> we can run through the same example. It stops here, and we have to make our
+> call before we see the rest. The app only gets the visible candles at this
+> point, so the answer isn't sitting behind that shaded area.
+
+## Get a feel for the chart
+
+**On screen:** Hover over candles so the values change. Open the indicator
+picker and select an indicator. Add a line or ray, then draw a rectangle around
+an area. Change the prediction and hypothetical action manually.
+
+> We can move around the chart and look at individual candles, switch
+> indicators, or draw on it if that helps us explain what we're seeing.
+> And we can enter our prediction and the action we'd take ourselves.
+> Nothing here places a trade.
+
+## Talk to the coach
+
+**On screen:** Turn on the mic. Ask “What's the closing price?” Show the
+transcript and the actual reply. Then ask “Should I buy here?” and show the
+response. Use the recorded answers rather than adding a scripted number.
+
+> Here, our mic is on, and we're asking, “What's the closing price?” The coach
+> gets that value from the chart data on the server and answers us. So if we
+> ask about something it can check in the visible candles, it can help.
 >
-> Most people learn to read a price chart by scrolling back through history,
-> where they already know what happened next. That teaches you to recognise the
-> answer, not to reason toward it.
+> Now we're asking, “Should I buy here?” And it won't make that decision for
+> us. It can help us understand what we're looking at, but we still have to
+> make the call.
+
+**On screen:** With the mic still on, say “I think it's heading lower. I'm about
+sixty percent confident, and I'd change my mind if it closes above the recent
+high.” Let the analysis fields update, then review and edit them.
+
+> We can talk through our reasoning too. Here we're saying we think it'll
+> go lower, we're about sixty percent confident, and what would change our
+> mind. It puts that into the form for us. We can check it and change anything
+> before we commit.
+
+## Commit the analysis
+
+**On screen:** Add a numerical evidence claim, review the confirmation, and
+commit. Pause on the evidence check and the submitted analysis. Show any missing
+fields that the feedback identifies.
+
+> Once we commit, the app saves our analysis with the chart we were looking
+> at. It checks the numerical claims against those candles, so we can see what
+> checks out, what doesn't, and what we left out. We haven't seen the outcome
+> yet, so this feedback is about the analysis we actually submitted.
+
+## Reveal the outcome
+
+**On screen:** Click reveal. Let the curtain clear, then show the chart and the
+prediction result. Pause on the result card's border. Add a short reflection
+and click Complete session.
+
+> Now we can reveal what happened next and compare it with our prediction.
+> The result card makes it easy to see whether we got the direction right or
+> wrong. We can leave a note about what we'd do differently, then complete
+> the session.
+
+## Return to the record
+
+**On screen:** Show the completed status in Your record. Switch between All,
+In progress, and Completed. Click a card's body to reopen it, then return.
+Hover over a card and click archive once, then click again to confirm. Open
+Archived sessions and restore it. Finish with the new replay icon in view.
+
+> That saves it in our record and updates the status. We can filter what
+> we've finished, pick up something we haven't, or open a session again by
+> clicking the card.
 >
-> FIanal.sim hides the right-hand side of a real chart and asks you to explain
-> what you see, out loud, before it shows you what happened.
+> If we want to put one aside, we can archive it. The first click asks us to
+> confirm, and the second does it. It's still in the archived view if we want
+> it back.
 >
-> It's a TypeScript monorepo: Next.js and React on the front, Fastify and
-> Postgres behind it, a live voice coach, and a Solana commitment that makes the
-> whole thing honest."
+> And from here, we can start another replay and try again.
 
-**Note:** that last clause sets up the demo's most interesting moment. Don't
-explain it yet.
+## Recording cues
 
----
-
-## 2. Demo — 2 minutes
-
-The core of the video. Show the loop end to end, once, without cutting away.
-
-### 2a. The blind chart (~20s)
-
-**Screen:** open a replay session. The chart renders, then stops mid-history.
-
-> "Here's real Solana price data, five-minute candles from Binance. The chart
-> stops at a cutoff. Everything to the right exists in the database, but the
-> server will not send it to my browser. I can't inspect my way to the answer."
-
-**Do:** scrub the chart, change the timeframe, add an indicator. Show it's a
-real chart, not a picture.
-
-### 2b. Talking to the coach (~45s)
-
-**Screen:** open the voice panel. Speak naturally.
-
-**Say aloud:** *"What's the closing price?"*
-
-> "Every number it says is computed by my server from the actual candles. The
-> model is not allowed to do arithmetic."
-
-**Say aloud:** *"What was the opening price thirty six hours before the cutoff?"*
-
-> "It handles spoken numbers and time references, and it can look back to any
-> earlier candle."
-
-**Say aloud:** *"What was the trend before the cutoff?"*
-
-> "That one has no formula, so the coach describes what it reads from the
-> values the server already gave it — and it's told to say that's a reading, not
-> a fact."
-
-**Then, the important one. Say aloud:** *"Should I buy here?"*
-
-> "And it won't. Trading advice, anything after the cutoff, news, the date —
-> those are refused before the question is even matched, so you can't rephrase
-> your way past them."
-
-**Note:** the refusal is the most persuasive thing in the video. Let it land
-before moving on.
-
-### 2c. The analysis fills itself (~25s)
-
-**Screen:** the analysis form beside the chart.
-
-**Say aloud, conversationally:** *"I think it's heading lower, I'm about sixty
-percent confident, and I'd be wrong if it closes back above the recent high."*
-
-**Do:** let the form fill. Point at it.
-
-> "I didn't fill that in. The coach listened, pulled out the prediction, the
-> confidence, and what would change my mind, and wrote them down. I still
-> review it and I can edit anything before it goes."
-
-### 2d. Submit and commit (~20s)
-
-**Do:** submit.
-
-> "On submit, my analysis is hashed and that hash is written to the Solana
-> devnet. Not the analysis — just a fingerprint of it.
->
-> That's what makes the exercise real. I can prove afterwards that this is
-> exactly what I predicted, and I couldn't have quietly edited it once I saw
-> the outcome."
-
-**Screen:** show the confirmed receipt, ideally the transaction on an explorer.
-
-### 2e. Reveal and grading (~30s)
-
-**Do:** click reveal. The hidden candles animate in.
-
-> "Now the future arrives."
-
-**Screen:** the feedback panel with scores.
-
-> "Two gradings, and they're deliberately separate. On submission it judged the
-> reasoning blind, with no idea what happened. After the reveal it judges the
-> call against the real outcome.
->
-> Both are kept. A lucky guess never retroactively improves a weak analysis,
-> and that's the whole point — you're being trained on your reasoning, not your
-> results.
->
-> Evidence claims are checked arithmetically against the candles. Those are
-> measured, not judged."
-
----
-
-## 3. Technical design — 30 seconds (~70 words)
-
-**Screen:** briefly, the repo structure or an architecture sketch.
-
-> "The design problem was trust. A language model that invents a price is worse
-> than useless in a teaching tool.
->
-> So the model chooses words and never numbers. When you ask for a value it
-> calls into my server, which computes it with exact decimal arithmetic from the
-> frozen candles. Every spoken number is checked against an allowlist of values
-> the server actually produced — if the coach says a number nobody gave it, the
-> turn is killed.
->
-> Refusals run before any matching, so they can't be worked around. One set of
-> schemas is shared by the API and the browser, and it's covered by 95 tests."
-
----
-
-## 4. Impact — 30 seconds (~70 words)
-
-**Screen:** back to the chart, or your faces.
-
-> "People lose real money learning this by doing it live. FIanal.sim gives you
-> the reps without the losses, and grades the reasoning rather than the outcome
-> — which is what actually transfers.
->
-> The commitment makes it credible enough to build on: a track record you can
-> prove, not one you edited afterwards.
->
-> Next, we'd widen it beyond one asset, and use the stored history to show you
-> your own patterns — the setups you misread, and the times you were confident
-> and wrong."
-
----
-
-## Filming notes
-
-- **Do a dry run of the voice section.** It's live and it can mishear. Know
-  what you'll say, and have a second phrasing ready.
-- **The refusal is your best moment.** "Should I buy here?" being declined
-  proves the guarantee better than any explanation.
-- **Show the reveal animating.** The hidden candles arriving is the emotional
-  beat of the whole project.
-- **Have the API running and the receipt already working.** Check the coach
-  answers one question before you start recording.
-- **If voice fails on camera**, type the same questions. The typed path uses the
-  identical calculator and refusals, so nothing about the claims changes.
-
-## Facts used, if you're asked
-
-| Claim | Value |
-|---|---|
-| Market data | Binance spot SOLUSDT, 5-minute candles |
-| Candles loaded | 2,016 |
-| Tests passing | 95 |
-| TypeScript lines | ~11,000 |
-| Rubric categories | 9, weighted |
-| Chain | Solana devnet, SPL Memo |
-| Commitment | SHA-256, prefixed `hackrice-analysis-v1` |
+- Keep the voiceover on what is happening. Let the field labels and cursor
+  movement explain the smaller controls.
+- Use the fixed replay to keep the recording consistent. The coach's answers
+  and the reveal should still be the responses the app actually produces.
+- Archive uses two separate clicks: the first selects confirmation, the second
+  confirms. It does not require a double-click gesture.
+- This version works with the testing receipt bypass. There is no spoken claim
+  that a transaction was confirmed.
